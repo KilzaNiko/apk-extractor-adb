@@ -153,10 +153,12 @@ async function loadDevices() {
         }
         sidebar.innerHTML = data.devices.map(d => {
             const wifiIcon = d.wireless ? `<svg viewBox="0 0 20 20" fill="currentColor" width="10" style="color:var(--accent);flex-shrink:0"><path fill-rule="evenodd" d="M17.778 8.222c-4.296-4.296-11.26-4.296-15.556 0A1 1 0 01.808 6.808c5.076-5.076 13.308-5.076 18.384 0a1 1 0 01-1.414 1.414zM14.95 11.05a7 7 0 00-9.9 0 1 1 0 01-1.414-1.414 9 9 0 0112.728 0 1 1 0 01-1.414 1.414zM12.12 13.88a3 3 0 00-4.242 0 1 1 0 01-1.414-1.415 5 5 0 017.072 0 1 1 0 01-1.415 1.414zM9 16a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>` : '';
-            const displayName = d.label !== d.serial ? d.label : d.serial;
+            const displayName = d.customName || (d.label !== d.serial ? d.label : d.serial);
             const safeId = encodeURIComponent(d.serial);
             const escapedSerial = d.serial.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-            const sub = d.label !== d.serial ? `<div style="font-size:0.65rem;color:var(--text3);opacity:0.7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.serial}</div>` : '';
+            const sub = (d.customName || d.label !== d.serial)
+                ? `<div style="font-size:0.65rem;color:var(--text3);opacity:0.7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.label !== d.serial ? d.label : d.serial}</div>`
+                : '';
             return `
       <div class="device-item" id="dev-${safeId}" onclick="selectDevice('${escapedSerial}')">
         <div class="device-dot"></div>
@@ -164,6 +166,9 @@ async function loadDevices() {
           <div style="display:flex;align-items:center;gap:4px"><div class="device-serial">${displayName}</div>${wifiIcon}</div>
           ${sub}
         </div>
+        <button class="btn-rename-device" onclick="event.stopPropagation();renameDevice('${escapedSerial}','${displayName.replace(/'/g, "\\'")}')" title="Renombrar">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="11" height="11"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>
+        </button>
       </div>`;
         }).join('');
         // Also refresh saved devices badge
@@ -171,6 +176,25 @@ async function loadDevices() {
     } catch {
         sidebar.innerHTML = `<div style="padding:0.5rem 0.75rem;color:var(--red);font-size:0.8rem">Error al conectar</div>`;
     }
+}
+
+async function renameDevice(serial, currentName) {
+    const name = prompt('Nombre para este dispositivo:', currentName || '');
+    if (name === null) return; // cancelled
+    try {
+        if (name.trim() === '') {
+            await fetch(`/api/device-names/${encodeURIComponent(serial)}`, { method: 'DELETE' });
+            toast('Nombre eliminado', 'success');
+        } else {
+            await fetch(`/api/device-names/${encodeURIComponent(serial)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name.trim() }),
+            });
+            toast(`Dispositivo renombrado: ${name.trim()}`, 'success');
+        }
+        loadDevices();
+    } catch { toast('Error al renombrar', 'error'); }
 }
 
 async function selectDevice(serial) {

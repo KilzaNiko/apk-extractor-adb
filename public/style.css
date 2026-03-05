@@ -499,6 +499,27 @@ body {
   animation: pulse-dot 2s infinite;
 }
 
+.btn-rename-device {
+  opacity: 0;
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.device-item:hover .btn-rename-device {
+  opacity: 1;
+}
+
+.btn-rename-device:hover {
+  color: var(--accent);
+  background: rgba(108, 99, 255, 0.1);
+}
+
 @keyframes pulse-dot {
 
   0%,

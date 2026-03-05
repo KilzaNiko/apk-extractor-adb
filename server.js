@@ -8,6 +8,7 @@ const app = express();
 const PORT = 3000;
 const CONFIG_FILE = path.join(__dirname, 'config.txt');
 const DEVICES_FILE = path.join(__dirname, 'devices.json');
+const NAMES_FILE = path.join(__dirname, 'device-names.json');
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -43,6 +44,19 @@ function loadSavedDevices() {
 
 function writeSavedDevices(devices) {
   fs.writeFileSync(DEVICES_FILE, JSON.stringify(devices, null, 2), 'utf8');
+}
+
+function loadDeviceNames() {
+  try {
+    if (fs.existsSync(NAMES_FILE)) {
+      return JSON.parse(fs.readFileSync(NAMES_FILE, 'utf8'));
+    }
+  } catch { }
+  return {};
+}
+
+function writeDeviceNames(names) {
+  fs.writeFileSync(NAMES_FILE, JSON.stringify(names, null, 2), 'utf8');
 }
 
 function runAdb(args, serial = null, timeout = 15000) {
@@ -136,6 +150,7 @@ app.get('/api/devices', (req, res) => {
     const out = runAdb('devices');
     const lines = out.split('\n').slice(1);
     const devices = [];
+    const deviceNames = loadDeviceNames();
     for (const line of lines) {
       const tabIdx = line.indexOf('\t');
       if (tabIdx === -1) continue;
@@ -181,7 +196,8 @@ app.get('/api/devices', (req, res) => {
           }
         }
 
-        devices.push({ serial, status, label, ip, wireless: isWireless });
+        const customName = deviceNames[serial] || null;
+        devices.push({ serial, status, label, ip, wireless: isWireless, customName });
       }
     }
     res.json({ devices });
@@ -584,6 +600,30 @@ app.delete('/api/saved-devices/:id', (req, res) => {
   let devices = loadSavedDevices();
   devices = devices.filter(d => d.id !== id);
   writeSavedDevices(devices);
+  res.json({ ok: true });
+});
+
+// ─── API: Device Names ───────────────────────────────────────────────────────
+
+app.get('/api/device-names', (req, res) => {
+  res.json({ names: loadDeviceNames() });
+});
+
+app.put('/api/device-names/:serial', (req, res) => {
+  const serial = decodeURIComponent(req.params.serial);
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'El nombre es requerido' });
+  const names = loadDeviceNames();
+  names[serial] = name.trim();
+  writeDeviceNames(names);
+  res.json({ ok: true });
+});
+
+app.delete('/api/device-names/:serial', (req, res) => {
+  const serial = decodeURIComponent(req.params.serial);
+  const names = loadDeviceNames();
+  delete names[serial];
+  writeDeviceNames(names);
   res.json({ ok: true });
 });
 

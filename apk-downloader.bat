@@ -181,17 +181,21 @@ echo.
 echo  ADB: %ADB_EXE%
 echo.
 echo  [1] Listar dispositivos conectados
-echo  [2] Cambiar ruta de ADB
-echo  [3] Salir
+echo  [2] Depuracion inalambrica (WiFi)
+echo  [3] Dispositivos guardados
+echo  [4] Cambiar ruta de ADB
+echo  [5] Salir
 echo.
-set /p MAIN_CHOICE="  Elige una opcion [1-3]: "
+set /p MAIN_CHOICE="  Elige una opcion [1-5]: "
 
 if "%MAIN_CHOICE%"=="1" goto LIST_DEVICES
-if "%MAIN_CHOICE%"=="2" (
+if "%MAIN_CHOICE%"=="2" goto WIRELESS_MENU
+if "%MAIN_CHOICE%"=="3" goto SAVED_DEVICES_MENU
+if "%MAIN_CHOICE%"=="4" (
     del "%CONFIG_FILE%" >nul 2>&1
     goto SETUP_ADB
 )
-if "%MAIN_CHOICE%"=="3" goto EXIT_SCRIPT
+if "%MAIN_CHOICE%"=="5" goto EXIT_SCRIPT
 goto MAIN_MENU
 
 :: ================================================================
@@ -207,14 +211,43 @@ echo.
 echo  Buscando dispositivos conectados...
 echo.
 
-:: Recolectar seriales de dispositivos autorizados
+:: Recolectar seriales — usar temp file con tab delimiter para soportar mDNS
 set DEVICE_COUNT=0
-for /f "skip=1 tokens=1,2" %%a in ('"%ADB_EXE%" devices 2^>nul') do (
-    if "%%b"=="device" (
-        set /a DEVICE_COUNT+=1
-        set "DEVICE_!DEVICE_COUNT!=%%a"
+set "TMP_DEVLIST=%TEMP%\apk_devices.tmp"
+"%ADB_EXE%" devices 2>nul > "%TMP_DEVLIST%"
+
+:: Leer el archivo de nombres si existe
+set "NAMES_FILE=%~dp0device-names.json"
+
+for /f "skip=1 usebackq delims=" %%L in ("%TMP_DEVLIST%") do (
+    set "LINE=%%L"
+    if not "!LINE!"=="" (
+        :: Verificar que la linea contiene 'device' (no 'unauthorized' etc)
+        echo !LINE! | findstr /c:"	device" >nul 2>&1
+        if !errorlevel!==0 (
+            :: Extraer serial (todo antes del tab)
+            for /f "delims=	" %%s in ("!LINE!") do (
+                set /a DEVICE_COUNT+=1
+                set "DEVICE_!DEVICE_COUNT!=%%s"
+                :: Buscar nombre personalizado
+                set "DEVNAME_!DEVICE_COUNT!="
+                if exist "!NAMES_FILE!" (
+                    for /f "usebackq delims=" %%n in (`findstr /c:"\"%%s\"" "!NAMES_FILE!" 2^>nul`) do (
+                        set "NMATCH=%%n"
+                        for /f "tokens=2 delims=:" %%v in ("!NMATCH!") do (
+                            set "NVAL=%%v"
+                            set "NVAL=!NVAL: =!"
+                            set "NVAL=!NVAL:"=!"
+                            set "NVAL=!NVAL:,=!"
+                            if not "!NVAL!"=="" set "DEVNAME_!DEVICE_COUNT!=!NVAL!"
+                        )
+                    )
+                )
+            )
+        )
     )
 )
+del "%TMP_DEVLIST%" >nul 2>&1
 
 if %DEVICE_COUNT%==0 (
     echo  No se encontraron dispositivos conectados.
@@ -223,6 +256,7 @@ if %DEVICE_COUNT%==0 (
     echo   - El cable USB este bien conectado
     echo   - La depuracion USB este activada en el dispositivo
     echo   - El dispositivo haya autorizado esta PC
+    echo   - O conectate por WiFi desde la opcion 2 del menu principal
     echo.
     pause
     goto MAIN_MENU
@@ -231,7 +265,11 @@ if %DEVICE_COUNT%==0 (
 echo  Dispositivos encontrados: %DEVICE_COUNT%
 echo.
 for /l %%i in (1,1,%DEVICE_COUNT%) do (
-    echo  [%%i] !DEVICE_%%i!
+    if defined DEVNAME_%%i (
+        echo  [%%i] !DEVNAME_%%i!  (!DEVICE_%%i!)
+    ) else (
+        echo  [%%i] !DEVICE_%%i!
+    )
 )
 echo.
 echo  [0] Volver al menu principal
@@ -267,11 +305,30 @@ echo  ╚═══════════════════════�
 echo.
 
 :: Obtener info del dispositivo
-for /f "tokens=*" %%a in ('"%ADB_EXE%" -s %CURRENT_DEVICE% shell getprop ro.product.manufacturer 2^>nul') do set "DEV_BRAND=%%a"
-for /f "tokens=*" %%a in ('"%ADB_EXE%" -s %CURRENT_DEVICE% shell getprop ro.product.model 2^>nul') do set "DEV_MODEL=%%a"
-for /f "tokens=*" %%a in ('"%ADB_EXE%" -s %CURRENT_DEVICE% shell getprop ro.build.version.release 2^>nul') do set "DEV_ANDROID=%%a"
-for /f "tokens=*" %%a in ('"%ADB_EXE%" -s %CURRENT_DEVICE% shell getprop ro.build.version.sdk 2^>nul') do set "DEV_SDK=%%a"
+for /f "tokens=*" %%a in ('"%ADB_EXE%" -s "%CURRENT_DEVICE%" shell getprop ro.product.manufacturer 2^>nul') do set "DEV_BRAND=%%a"
+for /f "tokens=*" %%a in ('"%ADB_EXE%" -s "%CURRENT_DEVICE%" shell getprop ro.product.model 2^>nul') do set "DEV_MODEL=%%a"
+for /f "tokens=*" %%a in ('"%ADB_EXE%" -s "%CURRENT_DEVICE%" shell getprop ro.build.version.release 2^>nul') do set "DEV_ANDROID=%%a"
+for /f "tokens=*" %%a in ('"%ADB_EXE%" -s "%CURRENT_DEVICE%" shell getprop ro.build.version.sdk 2^>nul') do set "DEV_SDK=%%a"
 
+:: Buscar nombre personalizado
+set "DEV_CUSTOM_NAME="
+set "NAMES_FILE=%~dp0device-names.json"
+if exist "!NAMES_FILE!" (
+    for /f "usebackq delims=" %%n in (`findstr /c:"\"!CURRENT_DEVICE!\"" "!NAMES_FILE!" 2^>nul`) do (
+        set "NMATCH=%%n"
+        for /f "tokens=2 delims=:" %%v in ("!NMATCH!") do (
+            set "NVAL=%%v"
+            set "NVAL=!NVAL: =!"
+            set "NVAL=!NVAL:"=!"
+            set "NVAL=!NVAL:,=!"
+            if not "!NVAL!"=="" set "DEV_CUSTOM_NAME=!NVAL!"
+        )
+    )
+)
+
+if defined DEV_CUSTOM_NAME (
+    echo  Nombre   : !DEV_CUSTOM_NAME!
+)
 echo  Serial   : %CURRENT_DEVICE%
 echo  Marca    : %DEV_BRAND%
 echo  Modelo   : %DEV_MODEL%
@@ -282,14 +339,91 @@ echo  │  ¿Qué deseas hacer?                                 │
 echo  └─────────────────────────────────────────────────────┘
 echo.
 echo  [1] Listar aplicaciones instaladas
-echo  [2] Volver a la lista de dispositivos
-echo  [3] Volver al menu principal
+echo  [2] Asignar nombre al dispositivo
+echo  [3] Volver a la lista de dispositivos
+echo  [4] Volver al menu principal
 echo.
-set /p DEV_MENU_CHOICE="  Elige una opcion [1-3]: "
+set /p DEV_MENU_CHOICE="  Elige una opcion [1-4]: "
 
 if "%DEV_MENU_CHOICE%"=="1" goto LIST_APPS
-if "%DEV_MENU_CHOICE%"=="2" goto LIST_DEVICES
-if "%DEV_MENU_CHOICE%"=="3" goto MAIN_MENU
+if "%DEV_MENU_CHOICE%"=="2" goto RENAME_DEVICE
+if "%DEV_MENU_CHOICE%"=="3" goto LIST_DEVICES
+if "%DEV_MENU_CHOICE%"=="4" goto MAIN_MENU
+goto DEVICE_MENU
+
+:: ================================================================
+::  RENOMBRAR DISPOSITIVO
+:: ================================================================
+:RENAME_DEVICE
+echo.
+if defined DEV_CUSTOM_NAME (
+    echo  Nombre actual: !DEV_CUSTOM_NAME!
+)
+echo  Ingresa el nuevo nombre (dejar vacio para eliminar):
+echo.
+set "NEW_DEV_NAME="
+set /p NEW_DEV_NAME="  Nombre: "
+
+set "NAMES_FILE=%~dp0device-names.json"
+
+:: Leer nombres existentes y reescribir
+set "NCOUNT=0"
+set "FOUND_SERIAL=0"
+if exist "!NAMES_FILE!" (
+    for /f "usebackq delims=" %%L in ("!NAMES_FILE!") do (
+        set "NLINE=%%L"
+        :: Ignorar llaves
+        echo !NLINE! | findstr /c:"{" >nul 2>&1 && set "NLINE="
+        echo !NLINE! | findstr /c:"}" >nul 2>&1 && set "NLINE="
+        if defined NLINE (
+            echo !NLINE! | findstr /c:"\"!CURRENT_DEVICE!\"" >nul 2>&1
+            if !errorlevel!==0 (
+                set "FOUND_SERIAL=1"
+            ) else (
+                set /a NCOUNT+=1
+                set "NENTRY_!NCOUNT!=!NLINE!"
+            )
+        )
+    )
+)
+
+:: Reconstruir JSON
+(
+echo {
+if defined NEW_DEV_NAME (
+    if not "%NEW_DEV_NAME%"=="" (
+        set /a NCOUNT+=1
+        set "NENTRY_!NCOUNT!=\"!CURRENT_DEVICE!\": \"!NEW_DEV_NAME!\""
+    )
+)
+set "NWRITTEN=0"
+for /l %%i in (1,1,!NCOUNT!) do (
+    set /a NWRITTEN+=1
+    set "ENTRY=!NENTRY_%%i!"
+    :: Limpiar comas trailing
+    set "ENTRY=!ENTRY:,=!"
+    if !NWRITTEN! lss !NCOUNT! (
+        echo   !ENTRY!,
+    ) else (
+        echo   !ENTRY!
+    )
+)
+echo }
+) > "!NAMES_FILE!"
+
+if defined NEW_DEV_NAME (
+    if not "%NEW_DEV_NAME%"=="" (
+        echo.
+        echo  [OK] Dispositivo renombrado a: %NEW_DEV_NAME%
+    ) else (
+        echo.
+        echo  [OK] Nombre eliminado.
+    )
+) else (
+    echo.
+    echo  [OK] Nombre eliminado.
+)
+timeout /t 2 /nobreak >nul
 goto DEVICE_MENU
 
 :: ================================================================
@@ -337,7 +471,7 @@ echo.
 
 :: Guardar lista en archivo temporal
 set "TMP_PKG=%TEMP%\apk_packages.tmp"
-"%ADB_EXE%" -s %CURRENT_DEVICE% shell pm list packages %PM_FLAGS% 2>nul | findstr "package:" > "%TMP_PKG%"
+"%ADB_EXE%" -s "%CURRENT_DEVICE%" shell pm list packages %PM_FLAGS% 2>nul | findstr "package:" > "%TMP_PKG%"
 
 :: Contar paquetes
 set PKG_COUNT=0
@@ -368,10 +502,10 @@ for /f "tokens=2 delims=:" %%p in ('type "%TMP_PKG%"') do (
     :: Contar APKs y calcular tamaño total en el dispositivo
     set "APKC=0"
     set "APKSZ=0"
-    for /f "tokens=2 delims=:" %%r in ('"%ADB_EXE%" -s %CURRENT_DEVICE% shell pm path !CPKG! 2^>nul') do (
+    for /f "tokens=2 delims=:" %%r in ('"%ADB_EXE%" -s "%CURRENT_DEVICE%" shell pm path !CPKG! 2^>nul') do (
         set /a APKC+=1
         :: Obtener tamaño de cada APK
-        for /f "tokens=5" %%s in ('"%ADB_EXE%" -s %CURRENT_DEVICE% shell stat -c "%%s" %%r 2^>nul') do (
+        for /f "tokens=5" %%s in ('"%ADB_EXE%" -s "%CURRENT_DEVICE%" shell stat -c "%%s" %%r 2^>nul') do (
             set /a APKSZ+=%%s/1024
         )
     )
@@ -489,19 +623,19 @@ echo  Obteniendo informacion...
 echo.
 
 :: Obtener version
-for /f "tokens=2 delims== " %%v in ('"%ADB_EXE%" -s %CURRENT_DEVICE% shell dumpsys package %SELECTED_PKG% 2^>nul ^| findstr "versionName"') do (
+for /f "tokens=2 delims== " %%v in ('"%ADB_EXE%" -s "%CURRENT_DEVICE%" shell dumpsys package %SELECTED_PKG% 2^>nul ^| findstr "versionName"') do (
     if not defined APP_VERSION set "APP_VERSION=%%v"
 )
 if not defined APP_VERSION set "APP_VERSION=Desconocida"
 
-for /f "tokens=2 delims== " %%v in ('"%ADB_EXE%" -s %CURRENT_DEVICE% shell dumpsys package %SELECTED_PKG% 2^>nul ^| findstr "versionCode"') do (
+for /f "tokens=2 delims== " %%v in ('"%ADB_EXE%" -s "%CURRENT_DEVICE%" shell dumpsys package %SELECTED_PKG% 2^>nul ^| findstr "versionCode"') do (
     if not defined APP_VCODE set "APP_VCODE=%%v"
 )
 if not defined APP_VCODE set "APP_VCODE=Desconocido"
 
 :: Obtener ruta(s) del APK y guardarlas
 set "TMP_PATHS=%TEMP%\apk_paths.tmp"
-"%ADB_EXE%" -s %CURRENT_DEVICE% shell pm path %SELECTED_PKG% 2>nul > "%TMP_PATHS%"
+"%ADB_EXE%" -s "%CURRENT_DEVICE%" shell pm path %SELECTED_PKG% 2>nul > "%TMP_PATHS%"
 
 :: Contar cuantos archivos APK existen
 set APK_PATH_COUNT=0
@@ -509,7 +643,7 @@ for /f %%x in ('type "%TMP_PATHS%" ^| find /c "package:"') do set APK_PATH_COUNT
 
 :: Obtener nombre de la app (label)
 set "APP_LABEL="
-for /f "tokens=*" %%L in ('"%ADB_EXE%" -s %CURRENT_DEVICE% shell dumpsys package %SELECTED_PKG% 2^>nul ^| findstr "applicationInfo" ^| findstr "label="') do (
+for /f "tokens=*" %%L in ('"%ADB_EXE%" -s "%CURRENT_DEVICE%" shell dumpsys package %SELECTED_PKG% 2^>nul ^| findstr "applicationInfo" ^| findstr "label="') do (
     if not defined APP_LABEL (
         for /f "tokens=* delims= " %%X in ("%%L") do set "APP_LABEL=%%X"
     )
@@ -617,7 +751,7 @@ echo  Extrayendo APK...
 echo  Destino: %APK_OUT_FILE%
 echo.
 
-"%ADB_EXE%" -s %CURRENT_DEVICE% pull "%APK_DEVICE_PATH%" "%APK_OUT_FILE%"
+"%ADB_EXE%" -s "%CURRENT_DEVICE%" pull "%APK_DEVICE_PATH%" "%APK_OUT_FILE%"
 
 if exist "%APK_OUT_FILE%" (
     echo.
@@ -689,7 +823,7 @@ for /f "tokens=2 delims=:" %%p in ('type "%TMP_PATHS%"') do (
     if "!APK_FNAME!"=="" set "APK_FNAME=split_!PART_NUM!.apk"
 
     echo    Extrayendo: !APK_FNAME!
-    "%ADB_EXE%" -s %CURRENT_DEVICE% pull "!REMOTE_PATH!" "%TMP_XAPK_DIR%\!APK_FNAME!" >nul 2>&1
+    "%ADB_EXE%" -s "%CURRENT_DEVICE%" pull "!REMOTE_PATH!" "%TMP_XAPK_DIR%\!APK_FNAME!" >nul 2>&1
 
     if exist "%TMP_XAPK_DIR%\!APK_FNAME!" (
         echo    [OK] !APK_FNAME!
@@ -703,18 +837,18 @@ echo.
 echo  Paso 2/3: Creando manifest.json...
 
 :: Obtener info para el manifest
-for /f "tokens=2 delims== " %%v in ('"%ADB_EXE%" -s %CURRENT_DEVICE% shell dumpsys package %SELECTED_PKG% 2^>nul ^| findstr "versionName"') do (
+for /f "tokens=2 delims== " %%v in ('"%ADB_EXE%" -s "%CURRENT_DEVICE%" shell dumpsys package %SELECTED_PKG% 2^>nul ^| findstr "versionName"') do (
     if not defined XAPK_VER set "XAPK_VER=%%v"
 )
 if not defined XAPK_VER set "XAPK_VER=1.0"
-for /f "tokens=2 delims== " %%v in ('"%ADB_EXE%" -s %CURRENT_DEVICE% shell dumpsys package %SELECTED_PKG% 2^>nul ^| findstr "versionCode"') do (
+for /f "tokens=2 delims== " %%v in ('"%ADB_EXE%" -s "%CURRENT_DEVICE%" shell dumpsys package %SELECTED_PKG% 2^>nul ^| findstr "versionCode"') do (
     if not defined XAPK_VCODE set "XAPK_VCODE=%%v"
 )
 if not defined XAPK_VCODE set "XAPK_VCODE=1"
 
 :: Min SDK del dispositivo como referencia
 set "MIN_SDK=21"
-for /f "tokens=2 delims== " %%v in ('"%ADB_EXE%" -s %CURRENT_DEVICE% shell dumpsys package %SELECTED_PKG% 2^>nul ^| findstr "minSdk"') do (
+for /f "tokens=2 delims== " %%v in ('"%ADB_EXE%" -s "%CURRENT_DEVICE%" shell dumpsys package %SELECTED_PKG% 2^>nul ^| findstr "minSdk"') do (
     if not defined MIN_SDK set "MIN_SDK=%%v"
 )
 
@@ -801,6 +935,209 @@ set "APP_VERSION="
 set "APP_VCODE="
 pause
 goto SHOW_PAGE
+
+:: ================================================================
+::  DEPURACION INALAMBRICA
+:: ================================================================
+:WIRELESS_MENU
+cls
+echo.
+echo  ╔══════════════════════════════════════════════════════╗
+echo  ║            APK EXTRACTOR  ^|  WiFi Debug             ║
+echo  ╚══════════════════════════════════════════════════════╝
+echo.
+echo  Para conectar un dispositivo por WiFi necesitas:
+echo.
+echo  1. Activar "Depuracion inalambrica" en el dispositivo
+echo  2. Obtener la IP, puerto de vinculacion y codigo de 6 digitos
+echo  3. Obtener el puerto de conexion
+echo.
+echo  ┌─────────────────────────────────────────────────────┐
+echo  │  Paso 1: Emparejamiento                             │
+echo  └─────────────────────────────────────────────────────┘
+echo.
+set /p WIFI_IP="  IP del dispositivo: "
+set /p WIFI_PAIR_PORT="  Puerto de vinculacion: "
+set /p WIFI_CODE="  Codigo de vinculacion (6 digitos): "
+echo.
+echo  Emparejando con %WIFI_IP%:%WIFI_PAIR_PORT%...
+echo.
+
+"%ADB_EXE%" pair %WIFI_IP%:%WIFI_PAIR_PORT% %WIFI_CODE% 2>&1
+if %errorlevel% neq 0 (
+    echo.
+    echo  [!] Error al emparejar. Verifica los datos e intenta de nuevo.
+    pause
+    goto WIRELESS_MENU
+)
+echo.
+echo  [OK] Emparejamiento exitoso.
+echo.
+echo  ┌─────────────────────────────────────────────────────┐
+echo  │  Paso 2: Conexion                                   │
+echo  └─────────────────────────────────────────────────────┘
+echo.
+set /p WIFI_CONN_PORT="  Puerto de conexion: "
+echo.
+echo  Conectando a %WIFI_IP%:%WIFI_CONN_PORT%...
+echo.
+
+"%ADB_EXE%" connect %WIFI_IP%:%WIFI_CONN_PORT% 2>&1
+if %errorlevel% neq 0 (
+    echo.
+    echo  [!] Error al conectar. Verifica el puerto e intenta de nuevo.
+    pause
+    goto WIRELESS_MENU
+)
+echo.
+echo  [OK] Conectado exitosamente a %WIFI_IP%:%WIFI_CONN_PORT%
+echo.
+
+:: Guardar dispositivo en devices.json
+set "DEV_FILE=%~dp0devices.json"
+set "SAVE_LABEL=%WIFI_IP%:%WIFI_CONN_PORT%"
+
+:: Intentar obtener marca/modelo
+for /f "tokens=*" %%a in ('"%ADB_EXE%" -s "%WIFI_IP%:%WIFI_CONN_PORT%" shell getprop ro.product.manufacturer 2^>nul') do set "WF_BRAND=%%a"
+for /f "tokens=*" %%a in ('"%ADB_EXE%" -s "%WIFI_IP%:%WIFI_CONN_PORT%" shell getprop ro.product.model 2^>nul') do set "WF_MODEL=%%a"
+if defined WF_BRAND if defined WF_MODEL set "SAVE_LABEL=!WF_BRAND! !WF_MODEL!"
+
+:: Agregar a devices.json (append simple)
+if not exist "!DEV_FILE!" echo [] > "!DEV_FILE!"
+
+:: Usar PowerShell para manipular JSON
+powershell -Command "$f='!DEV_FILE!';$d=Get-Content $f -Raw|ConvertFrom-Json;$exists=$d|Where-Object{$_.ip -eq '!WIFI_IP!'};if($exists){$exists.port='!WIFI_CONN_PORT!';$exists.lastConnected=(Get-Date -Format o);$exists.label='!SAVE_LABEL!'}else{$d+=[pscustomobject]@{id=[string](Get-Date -UFormat '%%s');label='!SAVE_LABEL!';ip='!WIFI_IP!';port='!WIFI_CONN_PORT!';lastConnected=(Get-Date -Format o)}};$d|ConvertTo-Json -Depth 5|Set-Content $f" 2>nul
+
+echo  [OK] Dispositivo guardado para reconexion futura.
+echo.
+pause
+goto MAIN_MENU
+
+:: ================================================================
+::  DISPOSITIVOS GUARDADOS
+:: ================================================================
+:SAVED_DEVICES_MENU
+cls
+echo.
+echo  ╔══════════════════════════════════════════════════════╗
+echo  ║            APK EXTRACTOR  ^|  Dispositivos Guardados ║
+echo  ╚══════════════════════════════════════════════════════╝
+echo.
+
+set "DEV_FILE=%~dp0devices.json"
+if not exist "!DEV_FILE!" (
+    echo  No hay dispositivos guardados.
+    echo.
+    echo  Conecta un dispositivo por WiFi (opcion 2) para guardarlo.
+    echo.
+    pause
+    goto MAIN_MENU
+)
+
+:: Leer dispositivos guardados con PowerShell
+set SAVED_COUNT=0
+for /f "usebackq delims=" %%L in (`powershell -Command "$d=Get-Content '!DEV_FILE!' -Raw|ConvertFrom-Json;$i=0;foreach($dev in $d){$i++;Write-Output \"$i|$($dev.label)|$($dev.ip)|$($dev.port)|$($dev.id)\"}" 2^>nul`) do (
+    set "SLINE=%%L"
+    for /f "tokens=1-5 delims=|" %%a in ("!SLINE!") do (
+        set /a SAVED_COUNT=%%a
+        set "SAVED_LABEL_%%a=%%b"
+        set "SAVED_IP_%%a=%%c"
+        set "SAVED_PORT_%%a=%%d"
+        set "SAVED_ID_%%a=%%e"
+    )
+)
+
+if %SAVED_COUNT%==0 (
+    echo  No hay dispositivos guardados.
+    echo.
+    pause
+    goto MAIN_MENU
+)
+
+echo  Dispositivos guardados: %SAVED_COUNT%
+echo.
+for /l %%i in (1,1,%SAVED_COUNT%) do (
+    echo  [%%i] !SAVED_LABEL_%%i!  (!SAVED_IP_%%i!:!SAVED_PORT_%%i!)
+)
+echo.
+echo  [C] Conectar a un dispositivo
+echo  [D] Eliminar un dispositivo
+echo  [0] Volver al menu principal
+echo.
+set /p SAVED_CHOICE="  Opcion: "
+
+if /i "%SAVED_CHOICE%"=="0" goto MAIN_MENU
+if /i "%SAVED_CHOICE%"=="C" goto SAVED_CONNECT
+if /i "%SAVED_CHOICE%"=="D" goto SAVED_DELETE
+goto SAVED_DEVICES_MENU
+
+:SAVED_CONNECT
+echo.
+set /p SAVED_SEL="  Numero del dispositivo a conectar [1-%SAVED_COUNT%]: "
+set "SC_IP="
+for /l %%i in (1,1,%SAVED_COUNT%) do (
+    if "%SAVED_SEL%"=="%%i" (
+        set "SC_IP=!SAVED_IP_%%i!"
+        set "SC_PORT=!SAVED_PORT_%%i!"
+        set "SC_LABEL=!SAVED_LABEL_%%i!"
+    )
+)
+if not defined SC_IP (
+    echo  [!] Opcion invalida.
+    pause
+    goto SAVED_DEVICES_MENU
+)
+echo.
+echo  Conectando a !SC_IP!:!SC_PORT!...
+"%ADB_EXE%" connect !SC_IP!:!SC_PORT! 2>&1 | findstr /i "connected" >nul 2>&1
+if %errorlevel%==0 (
+    echo  [OK] Conectado a !SC_LABEL!
+    echo.
+    pause
+    goto LIST_DEVICES
+) else (
+    echo  [!] No se pudo conectar. Los puertos pueden haber caducado.
+    echo.
+    echo  ¿Deseas re-vincular este dispositivo? [S/N]
+    set /p RELINK_CHOICE="  "
+    if /i "!RELINK_CHOICE!"=="S" (
+        echo.
+        echo  IP: !SC_IP! (no modificable)
+        set /p NEW_PAIR_PORT="  Nuevo puerto de vinculacion: "
+        set /p NEW_CODE="  Codigo de vinculacion: "
+        echo.
+        echo  Emparejando...
+        "%ADB_EXE%" pair !SC_IP!:!NEW_PAIR_PORT! !NEW_CODE! 2>&1
+        echo.
+        set /p NEW_CONN_PORT="  Nuevo puerto de conexion: "
+        echo.
+        echo  Conectando a !SC_IP!:!NEW_CONN_PORT!...
+        "%ADB_EXE%" connect !SC_IP!:!NEW_CONN_PORT! 2>&1
+        :: Actualizar puerto en devices.json
+        powershell -Command "$f='!DEV_FILE!';$d=Get-Content $f -Raw|ConvertFrom-Json;$e=$d|Where-Object{$_.ip -eq '!SC_IP!'};if($e){$e.port='!NEW_CONN_PORT!';$e.lastConnected=(Get-Date -Format o)};$d|ConvertTo-Json -Depth 5|Set-Content $f" 2>nul
+        echo.
+        echo  [OK] Puertos actualizados.
+    )
+    pause
+    goto SAVED_DEVICES_MENU
+)
+
+:SAVED_DELETE
+echo.
+set /p DEL_SEL="  Numero del dispositivo a eliminar [1-%SAVED_COUNT%]: "
+set "DEL_ID="
+for /l %%i in (1,1,%SAVED_COUNT%) do (
+    if "%DEL_SEL%"=="%%i" set "DEL_ID=!SAVED_ID_%%i!"
+)
+if not defined DEL_ID (
+    echo  [!] Opcion invalida.
+    pause
+    goto SAVED_DEVICES_MENU
+)
+powershell -Command "$f='!DEV_FILE!';$d=Get-Content $f -Raw|ConvertFrom-Json;$d=$d|Where-Object{$_.id -ne '!DEL_ID!'};if($d -eq $null){$d=@()};ConvertTo-Json @($d) -Depth 5|Set-Content $f" 2>nul
+echo  [OK] Dispositivo eliminado.
+timeout /t 2 /nobreak >nul
+goto SAVED_DEVICES_MENU
 
 :: ================================================================
 ::  SALIR

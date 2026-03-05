@@ -8,22 +8,23 @@ Herramienta local para extraer archivos APK y XAPK de dispositivos Android conec
 
 ### Gestión de Dispositivos
 - **Detección automática** de dispositivos Android conectados por USB o WiFi.
-- **Monitoreo en tiempo real** — la interfaz detecta automáticamente cuando un dispositivo se conecta o desconecta (polling cada 4 segundos), sin necesidad de refrescar manualmente.
+- **Monitoreo en tiempo real** (Web) — detecta automáticamente conexiones y desconexiones (polling cada 4 segundos).
 - **Soporte mDNS** — detecta dispositivos auto-conectados por depuración inalámbrica (formato `adb-*._adb-tls-connect._tcp`), resuelve su IP y muestra marca/modelo.
-- **Depuración inalámbrica** (WiFi) — emparejar y conectar dispositivos sin cable USB.
-- **Dispositivos guardados** — los dispositivos vinculados por WiFi se guardan automáticamente en la barra lateral para reconexión con un solo clic. Si los puertos caducan, se abre un asistente de reconexión con la IP pre-cargada (no editable) para re-vincular el dispositivo.
-- **Indicador WiFi** — los dispositivos inalámbricos se identifican visualmente con un ícono 📶 en la barra lateral.
+- **Depuración inalámbrica** (WiFi) — emparejar y conectar dispositivos sin cable USB. Disponible tanto en la interfaz web como en la consola.
+- **Dispositivos guardados** — los dispositivos WiFi se guardan automáticamente para reconexión rápida. Si los puertos caducan, se ofrece un asistente de re-vinculación con la IP pre-cargada.
+- **Nombres personalizados** — se puede asignar un nombre a cualquier dispositivo (por serial) que persiste entre sesiones. El nombre se muestra en la interfaz web y en la consola para identificar dispositivos fácilmente.
+- **Indicador WiFi** (Web) — los dispositivos inalámbricos se identifican con un ícono 📶 en la barra lateral.
 
 ### Extracción de Aplicaciones
 - **Listado de apps** con nombre, paquete, formato y tamaño.
 - **Filtrado** por tipo: usuario, sistema o todas.
 - **Búsqueda** por nombre o paquete.
-- **Copiar paquete** — botón para copiar el nombre del paquete al portapapeles directamente desde la lista de apps o desde el detalle.
+- **Copiar paquete** (Web) — botón para copiar el nombre del paquete al portapapeles desde la lista o el detalle.
 - **Extracción de APK** — descarga directa del archivo `.apk`.
-- **Compilación de XAPK** — empaqueta Split APKs (apps con múltiples archivos) en un único archivo `.xapk` instalable.
+- **Compilación de XAPK** — empaqueta Split APKs en un único archivo `.xapk` instalable.
 
 ### ADB Integrado
-- **Descarga automática** de Android Platform Tools si no se encuentra instalado en el sistema.
+- **Descarga automática** de Android Platform Tools si no se encuentra instalado.
 - **Configuración manual** de la ruta si ya cuenta con ADB instalado.
 - La ruta se guarda en `config.txt` para usos futuros.
 
@@ -32,6 +33,12 @@ Herramienta local para extraer archivos APK y XAPK de dispositivos Android conec
 - Carga progresiva de información (batch loading).
 - Feedback visual en tiempo real durante las extracciones.
 - Notificaciones toast para conexiones, desconexiones y errores.
+
+### Consola (CLI)
+- Menú interactivo con las mismas funcionalidades principales.
+- **Depuración inalámbrica** — vincular y conectar dispositivos por WiFi.
+- **Dispositivos guardados** — reconexión rápida, re-vinculación y eliminación.
+- **Nombres personalizados** — asignar y mostrar nombres desde el menú del dispositivo.
 
 ---
 
@@ -97,6 +104,7 @@ apk-downloader/
 ├── start-web.bat         # Launcher de la interfaz web
 ├── config.txt            # Ruta guardada de adb.exe
 ├── devices.json          # Dispositivos WiFi guardados
+├── device-names.json     # Nombres personalizados por serial
 └── package.json
 ```
 
@@ -107,7 +115,7 @@ apk-downloader/
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
 | `GET` | `/api/status` | Estado de configuración de ADB |
-| `GET` | `/api/devices` | Lista de dispositivos conectados (con marca, modelo e IP) |
+| `GET` | `/api/devices` | Lista de dispositivos conectados (con marca, modelo, IP y nombre) |
 | `GET` | `/api/devices/poll` | Lista rápida de seriales (para polling de cambios) |
 | `GET` | `/api/devices/:serial/info` | Info del dispositivo (marca, modelo, versión de Android) |
 | `GET` | `/api/devices/:serial/apps` | Lista de aplicaciones instaladas |
@@ -120,6 +128,9 @@ apk-downloader/
 | `GET` | `/api/saved-devices` | Lista de dispositivos guardados |
 | `POST` | `/api/saved-devices` | Guardar/actualizar un dispositivo |
 | `DELETE` | `/api/saved-devices/:id` | Eliminar dispositivo guardado |
+| `GET` | `/api/device-names` | Obtener todos los nombres personalizados |
+| `PUT` | `/api/device-names/:serial` | Asignar nombre a un dispositivo |
+| `DELETE` | `/api/device-names/:serial` | Eliminar nombre personalizado |
 
 ---
 
@@ -128,3 +139,5 @@ apk-downloader/
 - Los archivos APK extraídos se descargan directamente en el navegador y no se almacenan en el servidor.
 - Las aplicaciones con **Split APK** (múltiples archivos) no pueden exportarse como un archivo `.apk` simple — utilice la opción **Compilar XAPK** para empaquetar todos los archivos en un solo `.xapk`.
 - Los archivos `.xapk` se pueden instalar utilizando [SAI (Split APKs Installer)](https://github.com/nicholasgasior/sai), APKPure o APKMirror Installer.
+- Los nombres de dispositivos se almacenan en `device-names.json` y son compartidos entre la interfaz web y la consola.
+
