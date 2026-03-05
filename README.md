@@ -7,14 +7,18 @@ Herramienta local para extraer archivos APK y XAPK de dispositivos Android conec
 ## ✨ Características
 
 ### Gestión de Dispositivos
-- **Detección automática** de dispositivos Android conectados por USB.
-- **Depuración inalámbrica** (WiFi) — emparejar y conectar dispositivos sin cable.
-- **Dispositivos guardados** — los dispositivos vinculados por WiFi se guardan automáticamente para su reconexión con un solo clic. Si los puertos han caducado, se abre un asistente para re-vincular el dispositivo manteniendo la IP original.
+- **Detección automática** de dispositivos Android conectados por USB o WiFi.
+- **Monitoreo en tiempo real** — la interfaz detecta automáticamente cuando un dispositivo se conecta o desconecta (polling cada 4 segundos), sin necesidad de refrescar manualmente.
+- **Soporte mDNS** — detecta dispositivos auto-conectados por depuración inalámbrica (formato `adb-*._adb-tls-connect._tcp`), resuelve su IP y muestra marca/modelo.
+- **Depuración inalámbrica** (WiFi) — emparejar y conectar dispositivos sin cable USB.
+- **Dispositivos guardados** — los dispositivos vinculados por WiFi se guardan automáticamente en la barra lateral para reconexión con un solo clic. Si los puertos caducan, se abre un asistente de reconexión con la IP pre-cargada (no editable) para re-vincular el dispositivo.
+- **Indicador WiFi** — los dispositivos inalámbricos se identifican visualmente con un ícono 📶 en la barra lateral.
 
 ### Extracción de Aplicaciones
 - **Listado de apps** con nombre, paquete, formato y tamaño.
 - **Filtrado** por tipo: usuario, sistema o todas.
 - **Búsqueda** por nombre o paquete.
+- **Copiar paquete** — botón para copiar el nombre del paquete al portapapeles directamente desde la lista de apps o desde el detalle.
 - **Extracción de APK** — descarga directa del archivo `.apk`.
 - **Compilación de XAPK** — empaqueta Split APKs (apps con múltiples archivos) en un único archivo `.xapk` instalable.
 
@@ -27,6 +31,7 @@ Herramienta local para extraer archivos APK y XAPK de dispositivos Android conec
 - Diseño moderno con modo **claro y oscuro**.
 - Carga progresiva de información (batch loading).
 - Feedback visual en tiempo real durante las extracciones.
+- Notificaciones toast para conexiones, desconexiones y errores.
 
 ---
 
@@ -102,7 +107,8 @@ apk-downloader/
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
 | `GET` | `/api/status` | Estado de configuración de ADB |
-| `GET` | `/api/devices` | Lista de dispositivos conectados |
+| `GET` | `/api/devices` | Lista de dispositivos conectados (con marca, modelo e IP) |
+| `GET` | `/api/devices/poll` | Lista rápida de seriales (para polling de cambios) |
 | `GET` | `/api/devices/:serial/info` | Info del dispositivo (marca, modelo, versión de Android) |
 | `GET` | `/api/devices/:serial/apps` | Lista de aplicaciones instaladas |
 | `POST` | `/api/devices/:serial/apps/batch-info` | Información en lote (formato, tamaño, nombre) |
@@ -112,6 +118,7 @@ apk-downloader/
 | `POST` | `/api/adb/pair` | Emparejar dispositivo por WiFi |
 | `POST` | `/api/adb/connect` | Conectar al dispositivo por WiFi |
 | `GET` | `/api/saved-devices` | Lista de dispositivos guardados |
+| `POST` | `/api/saved-devices` | Guardar/actualizar un dispositivo |
 | `DELETE` | `/api/saved-devices/:id` | Eliminar dispositivo guardado |
 
 ---

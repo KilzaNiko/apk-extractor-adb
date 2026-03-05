@@ -48,7 +48,7 @@ function writeSavedDevices(devices) {
 function runAdb(args, serial = null, timeout = 15000) {
   const adb = getAdbPath();
   if (!adb) throw new Error('ADB no configurado');
-  const serialFlag = serial ? `-s ${serial}` : '';
+  const serialFlag = serial ? `-s "${serial}"` : '';
   const cmd = `"${adb}" ${serialFlag} ${args}`;
   return execSync(cmd, { encoding: 'utf8', timeout });
 }
@@ -112,14 +112,77 @@ app.get('/api/config/download', (req, res) => {
 
 // ─── API: Devices ──────────────────────────────────────────────────────────────
 
+// Lightweight poll — just returns serial list (fast, no getprop)
+app.get('/api/devices/poll', (req, res) => {
+  try {
+    const out = runAdb('devices', null, 5000);
+    const lines = out.split('\n').slice(1);
+    const serials = [];
+    for (const line of lines) {
+      const tabIdx = line.indexOf('\t');
+      if (tabIdx === -1) continue;
+      const serial = line.substring(0, tabIdx).trim();
+      const status = line.substring(tabIdx).trim();
+      if (status === 'device' && serial) serials.push(serial);
+    }
+    res.json({ serials });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/devices', (req, res) => {
   try {
     const out = runAdb('devices');
     const lines = out.split('\n').slice(1);
     const devices = [];
     for (const line of lines) {
-      const parts = line.trim().split(/\s+/);
-      if (parts[1] === 'device') devices.push({ serial: parts[0], status: parts[1] });
+      const tabIdx = line.indexOf('\t');
+      if (tabIdx === -1) continue;
+      const serial = line.substring(0, tabIdx).trim();
+      const status = line.substring(tabIdx).trim();
+      if (status === 'device' && serial) {
+        const isWireless = serial.includes(':') || serial.includes('._adb');
+        let label = serial;
+        let ip = null;
+
+        // Try to get brand/model for display
+        try {
+          const brand = runAdb('shell getprop ro.product.manufacturer', serial, 5000).trim();
+          const model = runAdb('shell getprop ro.product.model', serial, 5000).trim();
+          if (brand && model && brand !== 'N/A') label = `${brand} ${model}`;
+        } catch { }
+
+        // Resolve IP for wireless devices
+        if (isWireless) {
+          if (serial.includes(':') && !serial.includes('._adb')) {
+            // Standard ip:port format
+            ip = serial.split(':')[0];
+          } else {
+            // mDNS format — resolve IP from device's network config
+            try {
+              const ipOut = runAdb('shell ip route', serial, 5000).trim();
+              const srcMatch = ipOut.match(/src\s+([\d.]+)/);
+              if (srcMatch) ip = srcMatch[1];
+            } catch { }
+          }
+
+          // Auto-update saved device if IP matches
+          if (ip) {
+            try {
+              const saved = loadSavedDevices();
+              const existing = saved.find(d => d.ip === ip);
+              if (existing) {
+                existing.lastConnected = new Date().toISOString();
+                if (label !== serial) existing.label = label;
+                writeSavedDevices(saved);
+              }
+            } catch { }
+          }
+        }
+
+        devices.push({ serial, status, label, ip, wireless: isWireless });
+      }
     }
     res.json({ devices });
   } catch (e) {

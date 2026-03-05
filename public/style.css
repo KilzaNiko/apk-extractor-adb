@@ -854,6 +854,26 @@ html[data-theme="light"] .main-content {
   margin-top: 1px;
 }
 
+.app-pkg-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 1px;
+}
+
+.app-pkg-row .app-pkg {
+  margin-top: 0;
+}
+
+.app-pkg-row .btn-copy-pkg {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.app-item:hover .app-pkg-row .btn-copy-pkg {
+  opacity: 1;
+}
+
 .app-info {
   flex: 1;
   min-width: 0;

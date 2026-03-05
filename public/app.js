@@ -42,6 +42,36 @@ function showMainApp() {
     document.getElementById('screen-main').classList.remove('hidden');
     loadDevices();
     loadSavedDevicesBadge();
+    startDevicePolling();
+}
+
+let knownSerials = [];
+let pollTimer = null;
+
+function startDevicePolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(pollDevices, 4000);
+}
+
+async function pollDevices() {
+    try {
+        const res = await fetch('/api/devices/poll');
+        const data = await res.json();
+        if (!res.ok) return;
+        const current = (data.serials || []).sort().join('|');
+        const known = knownSerials.sort().join('|');
+        if (current !== known) {
+            knownSerials = data.serials || [];
+            loadDevices();
+            // If active device was disconnected, clear the panel
+            if (state.currentSerial && !knownSerials.includes(state.currentSerial)) {
+                state.currentSerial = null;
+                hide('panel-device');
+                show('panel-welcome');
+                toast('Dispositivo desconectado', 'warning');
+            }
+        }
+    } catch { }
 }
 
 async function loadSavedDevicesBadge() {
@@ -116,15 +146,28 @@ async function loadDevices() {
         const res = await fetch('/api/devices');
         const data = await res.json();
         if (!res.ok) return toast(data.error, 'error');
+        knownSerials = data.devices.map(d => d.serial);
         if (data.devices.length === 0) {
             sidebar.innerHTML = `<div style="padding:0.5rem 0.75rem;color:var(--text3);font-size:0.8rem">Sin dispositivos</div>`;
             return;
         }
-        sidebar.innerHTML = data.devices.map(d => `
-      <div class="device-item" id="dev-${d.serial}" onclick="selectDevice('${d.serial}')">
+        sidebar.innerHTML = data.devices.map(d => {
+            const wifiIcon = d.wireless ? `<svg viewBox="0 0 20 20" fill="currentColor" width="10" style="color:var(--accent);flex-shrink:0"><path fill-rule="evenodd" d="M17.778 8.222c-4.296-4.296-11.26-4.296-15.556 0A1 1 0 01.808 6.808c5.076-5.076 13.308-5.076 18.384 0a1 1 0 01-1.414 1.414zM14.95 11.05a7 7 0 00-9.9 0 1 1 0 01-1.414-1.414 9 9 0 0112.728 0 1 1 0 01-1.414 1.414zM12.12 13.88a3 3 0 00-4.242 0 1 1 0 01-1.414-1.415 5 5 0 017.072 0 1 1 0 01-1.415 1.414zM9 16a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>` : '';
+            const displayName = d.label !== d.serial ? d.label : d.serial;
+            const safeId = encodeURIComponent(d.serial);
+            const escapedSerial = d.serial.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            const sub = d.label !== d.serial ? `<div style="font-size:0.65rem;color:var(--text3);opacity:0.7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.serial}</div>` : '';
+            return `
+      <div class="device-item" id="dev-${safeId}" onclick="selectDevice('${escapedSerial}')">
         <div class="device-dot"></div>
-        <div><div class="device-serial">${d.serial}</div></div>
-      </div>`).join('');
+        <div style="min-width:0;flex:1">
+          <div style="display:flex;align-items:center;gap:4px"><div class="device-serial">${displayName}</div>${wifiIcon}</div>
+          ${sub}
+        </div>
+      </div>`;
+        }).join('');
+        // Also refresh saved devices badge
+        loadSavedDevicesBadge();
     } catch {
         sidebar.innerHTML = `<div style="padding:0.5rem 0.75rem;color:var(--red);font-size:0.8rem">Error al conectar</div>`;
     }
@@ -132,7 +175,7 @@ async function loadDevices() {
 
 async function selectDevice(serial) {
     document.querySelectorAll('.device-item').forEach(el => el.classList.remove('selected'));
-    const el = document.getElementById('dev-' + serial);
+    const el = document.getElementById('dev-' + encodeURIComponent(serial));
     if (el) el.classList.add('selected');
 
     state.currentSerial = serial;
@@ -148,7 +191,7 @@ async function selectDevice(serial) {
     document.getElementById('badge-serial').textContent = serial;
 
     try {
-        const res = await fetch(`/api/devices/${serial}/info`);
+        const res = await fetch(`/api/devices/${encodeURIComponent(serial)}/info`);
         const d = await res.json();
         if (!res.ok) throw new Error(d.error);
         state.currentDeviceInfo = d;
@@ -169,7 +212,7 @@ async function loadApps() {
     container.innerHTML = `<div class="empty-state sm"><div class="spinner"></div><p>Cargando aplicaciones...</p></div>`;
 
     try {
-        const res = await fetch(`/api/devices/${state.currentSerial}/apps?type=${state.currentFilter}`);
+        const res = await fetch(`/api/devices/${encodeURIComponent(state.currentSerial)}/apps?type=${state.currentFilter}`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
 
@@ -197,7 +240,7 @@ async function loadBatchInfo(packages) {
     for (let i = 0; i < packages.length; i += CHUNK) {
         const chunk = packages.slice(i, i + CHUNK);
         try {
-            const res = await fetch(`/api/devices/${state.currentSerial}/apps/batch-info`, {
+            const res = await fetch(`/api/devices/${encodeURIComponent(state.currentSerial)}/apps/batch-info`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ packages: chunk }),
@@ -283,13 +326,33 @@ function renderApps() {
             <div class="app-icon">${letter}</div>
             <div class="app-info">
               <div class="app-name${nameLoading ? ' app-name--loading' : ''}">${displayName}</div>
-              <div class="app-pkg">${app.pkg}</div>
+              <div class="app-pkg-row">
+                <span class="app-pkg">${app.pkg}</span>
+                <button class="btn-copy-pkg" onclick="event.stopPropagation();copyPkg(this,'${app.pkg}')" title="Copiar paquete">
+                  <svg viewBox="0 0 20 20" fill="currentColor" width="12" height="12">
+                    <path d="M8 2a1 1 0 000 2h2a1 1 0 100-2H8z"/>
+                    <path d="M3 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v6h-4.586l1.293-1.293a1 1 0 00-1.414-1.414l-3 3a1 1 0 000 1.414l3 3a1 1 0 001.414-1.414L10.414 13H15v3a2 2 0 01-2 2H5a2 2 0 01-2-2V5zM15 11h2a1 1 0 110 2h-2v-2z"/>
+                  </svg>
+                  <span>Copiar</span>
+                </button>
+              </div>
               <div class="app-meta">${formatBadge}${sizeLabel}</div>
             </div>
             <svg class="app-chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
           </div>`;
     }).join('')}
     </div>`;
+}
+
+async function copyPkg(btn, pkg) {
+    try {
+        await navigator.clipboard.writeText(pkg);
+        const span = btn.querySelector('span');
+        span.textContent = '¡Copiado!';
+        setTimeout(() => { span.textContent = 'Copiar'; }, 2000);
+    } catch {
+        toast('No se pudo copiar', 'error');
+    }
 }
 
 async function copyPackageName() {
@@ -326,7 +389,7 @@ async function openAppDetail(pkg) {
     show('modal-overlay');
 
     try {
-        const res = await fetch(`/api/devices/${state.currentSerial}/apps/${encodeURIComponent(pkg)}/info`);
+        const res = await fetch(`/api/devices/${encodeURIComponent(state.currentSerial)}/apps/${encodeURIComponent(pkg)}/info`);
         const d = await res.json();
         if (!res.ok) throw new Error(d.error);
         state.currentPkgInfo = d;
@@ -390,7 +453,7 @@ async function extractApk() {
 
     try {
         const res = await fetch(
-            `/api/devices/${state.currentSerial}/apps/${encodeURIComponent(state.currentPkg)}/extract`,
+            `/api/devices/${encodeURIComponent(state.currentSerial)}/apps/${encodeURIComponent(state.currentPkg)}/extract`,
             { method: 'POST' }
         );
         if (!res.ok) {
@@ -429,7 +492,7 @@ async function compileXapk() {
     const setBar = (p) => { barEl.style.width = p + '%'; lblEl.textContent = `Compilando XAPK... ${p}%`; };
 
     const evtSource = new EventSource(
-        `/api/devices/${state.currentSerial}/apps/${encodeURIComponent(state.currentPkg)}/compile-xapk`
+        `/api/devices/${encodeURIComponent(state.currentSerial)}/apps/${encodeURIComponent(state.currentPkg)}/compile-xapk`
     );
 
     evtSource.onmessage = (ev) => {
@@ -444,7 +507,7 @@ async function compileXapk() {
                 lblEl.textContent = '¡XAPK listo! Descargando...';
                 // Trigger download
                 const a = document.createElement('a');
-                a.href = `/api/devices/${state.currentSerial}/apps/${encodeURIComponent(state.currentPkg)}/download-xapk`;
+                a.href = `/api/devices/${encodeURIComponent(state.currentSerial)}/apps/${encodeURIComponent(state.currentPkg)}/download-xapk`;
                 a.download = `${state.currentPkg}.xapk`;
                 document.body.appendChild(a); a.click(); document.body.removeChild(a);
                 toast(`XAPK compilado: ${state.currentPkg}.xapk`, 'success');
