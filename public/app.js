@@ -41,6 +41,21 @@ function showMainApp() {
     document.getElementById('screen-setup').classList.add('hidden');
     document.getElementById('screen-main').classList.remove('hidden');
     loadDevices();
+    loadSavedDevicesBadge();
+}
+
+async function loadSavedDevicesBadge() {
+    try {
+        const res = await fetch('/api/saved-devices');
+        const data = await res.json();
+        const badge = document.getElementById('saved-devices-count');
+        if (data.devices && data.devices.length > 0) {
+            badge.textContent = data.devices.length;
+            badge.classList.remove('hidden');
+        } else {
+            badge.classList.add('hidden');
+        }
+    } catch { }
 }
 
 /* ─── Setup: Manual Path ─────────────────────────────────────── */
@@ -459,26 +474,39 @@ async function openWirelessModal() {
     } catch {
         document.getElementById('wireless-pc-ip').textContent = 'Error al obtener IP';
     }
+}
 
-    // Load saved devices
-    loadSavedDevicesList();
+/* ─── Saved Devices (Sidebar) ────────────────────────────────── */
+function toggleSavedDevices() {
+    const container = document.getElementById('saved-devices-sidebar');
+    const isVisible = !container.classList.contains('hidden');
+    if (isVisible) {
+        container.classList.add('hidden');
+    } else {
+        container.classList.remove('hidden');
+        loadSavedDevicesList();
+    }
 }
 
 async function loadSavedDevicesList() {
+    const container = document.getElementById('saved-devices-sidebar');
+    const badge = document.getElementById('saved-devices-count');
+
     try {
         const res = await fetch('/api/saved-devices');
         const data = await res.json();
-        const container = document.getElementById('saved-devices-list');
-        const section = document.getElementById('saved-devices-section');
 
         if (!data.devices || data.devices.length === 0) {
-            hide('saved-devices-section');
+            badge.classList.add('hidden');
+            container.innerHTML = `<div class="saved-devices-empty">No hay dispositivos guardados</div>`;
             return;
         }
 
-        show('saved-devices-section');
+        badge.textContent = data.devices.length;
+        badge.classList.remove('hidden');
+
         container.innerHTML = data.devices.map(d => {
-            const lastDate = d.lastConnected ? new Date(d.lastConnected).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+            const lastDate = d.lastConnected ? new Date(d.lastConnected).toLocaleDateString('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
             return `
             <div class="saved-device-card" id="saved-dev-${d.id}">
                 <div class="saved-device-info">
@@ -491,15 +519,14 @@ async function loadSavedDevicesList() {
                     <div class="saved-device-text">
                         <div class="saved-device-label">${d.label}</div>
                         <div class="saved-device-addr">${d.ip}:${d.port}</div>
-                        ${lastDate ? `<div class="saved-device-date">Última: ${lastDate}</div>` : ''}
+                        ${lastDate ? `<div class="saved-device-date">${lastDate}</div>` : ''}
                     </div>
                 </div>
                 <div class="saved-device-actions">
-                    <button class="btn btn-primary btn-sm saved-device-connect" onclick="reconnectSavedDevice('${d.ip}', '${d.port}', '${d.id}')" title="Reconectar">
+                    <button class="btn btn-primary btn-sm saved-device-connect" onclick="reconnectSavedDevice('${d.ip}', '${d.port}', '${d.id}')" title="Conectar">
                         <svg viewBox="0 0 20 20" fill="currentColor">
                             <path fill-rule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clip-rule="evenodd"/>
                         </svg>
-                        Conectar
                     </button>
                     <button class="btn btn-sm saved-device-delete" onclick="deleteSavedDevice('${d.id}')" title="Eliminar">
                         <svg viewBox="0 0 20 20" fill="currentColor">
@@ -510,13 +537,15 @@ async function loadSavedDevicesList() {
             </div>`;
         }).join('');
     } catch {
-        hide('saved-devices-section');
+        container.innerHTML = `<div class="saved-devices-empty">Error al cargar</div>`;
+        badge.classList.add('hidden');
     }
 }
 
 async function reconnectSavedDevice(ip, port, id) {
     const card = document.getElementById('saved-dev-' + id);
     const connectBtn = card?.querySelector('.saved-device-connect');
+    const linkIcon = '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clip-rule="evenodd"/></svg>';
     if (connectBtn) {
         connectBtn.disabled = true;
         connectBtn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px"></div>';
@@ -531,21 +560,116 @@ async function reconnectSavedDevice(ip, port, id) {
         const data = await res.json();
         if (data.ok) {
             toast(`Conectado a ${ip}:${port}`, 'success');
-            setTimeout(() => { loadDevices(); closeWirelessModal(); }, 1000);
-        } else {
-            toast(data.output || data.error || 'No se pudo conectar', 'error');
+            loadDevices();
             if (connectBtn) {
                 connectBtn.disabled = false;
-                connectBtn.innerHTML = '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clip-rule="evenodd"/></svg> Conectar';
+                connectBtn.innerHTML = '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>';
+                setTimeout(() => { connectBtn.innerHTML = linkIcon; }, 2000);
             }
+        } else {
+            // Connection failed — open reconnect modal
+            if (connectBtn) { connectBtn.disabled = false; connectBtn.innerHTML = linkIcon; }
+            openReconnectModal(ip, id, card?.querySelector('.saved-device-label')?.textContent || ip);
         }
     } catch {
-        toast('Error de conexión', 'error');
-        if (connectBtn) {
-            connectBtn.disabled = false;
-            connectBtn.innerHTML = '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clip-rule="evenodd"/></svg> Conectar';
-        }
+        if (connectBtn) { connectBtn.disabled = false; connectBtn.innerHTML = linkIcon; }
+        openReconnectModal(ip, id, card?.querySelector('.saved-device-label')?.textContent || ip);
     }
+}
+
+/* ─── Reconnect Modal ────────────────────────────────────────── */
+let reconnectState = { ip: '', deviceId: '' };
+
+function openReconnectModal(ip, deviceId, label) {
+    reconnectState = { ip, deviceId };
+    document.getElementById('reconnect-device-label').textContent = label;
+    document.getElementById('reconnect-pair-ip').value = ip;
+    document.getElementById('reconnect-pair-port').value = '';
+    document.getElementById('reconnect-pair-code').value = '';
+    document.getElementById('reconnect-connect-ip').value = ip;
+    document.getElementById('reconnect-connect-port').value = '';
+    hide('reconnect-pair-result');
+    hide('reconnect-connect-result');
+    show('modal-reconnect-overlay');
+}
+
+function closeReconnectModal(e) {
+    if (e && e.target !== document.getElementById('modal-reconnect-overlay')) return;
+    hide('modal-reconnect-overlay');
+}
+
+async function reconnectPairDevice() {
+    const ip = reconnectState.ip;
+    const port = document.getElementById('reconnect-pair-port').value.trim();
+    const code = document.getElementById('reconnect-pair-code').value.trim();
+    const resultEl = document.getElementById('reconnect-pair-result');
+    const btn = document.getElementById('btn-reconnect-pair');
+
+    if (!port || !code) { showResult(resultEl, 'Ingrese el puerto y el código', false); return; }
+
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px"></div> Emparejando...';
+
+    try {
+        const res = await fetch('/api/adb/pair', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ip, port, code }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+            showResult(resultEl, '✓ Emparejado correctamente. Ahora complete el paso 2.', true);
+        } else {
+            showResult(resultEl, data.output || data.error || 'Error al emparejar', false);
+        }
+    } catch {
+        showResult(resultEl, 'Error de conexión', false);
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg> Emparejar';
+}
+
+async function reconnectConnectDevice() {
+    const ip = reconnectState.ip;
+    const port = document.getElementById('reconnect-connect-port').value.trim();
+    const resultEl = document.getElementById('reconnect-connect-result');
+    const btn = document.getElementById('btn-reconnect-connect');
+
+    if (!port) { showResult(resultEl, 'Ingrese el puerto de conexión', false); return; }
+
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px"></div> Conectando...';
+
+    try {
+        const res = await fetch('/api/adb/connect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ip, port }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+            showResult(resultEl, '✓ Conectado exitosamente', true);
+            toast(`Conectado a ${ip}:${port}`, 'success');
+            loadDevices();
+            loadSavedDevicesList();
+            loadSavedDevicesBadge();
+            setTimeout(() => closeReconnectModal(), 1500);
+        } else {
+            showResult(resultEl, data.output || data.error || 'Error al conectar', false);
+        }
+    } catch {
+        showResult(resultEl, 'Error de conexión', false);
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clip-rule="evenodd"/></svg> Conectar';
+}
+
+function showResult(el, msg, ok) {
+    el.classList.remove('hidden');
+    el.style.color = ok ? 'var(--green)' : 'var(--red)';
+    el.textContent = msg;
 }
 
 async function deleteSavedDevice(id) {
@@ -558,8 +682,14 @@ async function deleteSavedDevice(id) {
             card.style.transition = '0.3s ease';
             setTimeout(() => {
                 card.remove();
-                const list = document.getElementById('saved-devices-list');
-                if (list && list.children.length === 0) hide('saved-devices-section');
+                const container = document.getElementById('saved-devices-sidebar');
+                const badge = document.getElementById('saved-devices-count');
+                if (container && container.querySelectorAll('.saved-device-card').length === 0) {
+                    container.innerHTML = `<div class="saved-devices-empty">No hay dispositivos guardados</div>`;
+                    badge.classList.add('hidden');
+                } else if (badge) {
+                    badge.textContent = container.querySelectorAll('.saved-device-card').length;
+                }
             }, 300);
         }
         toast('Dispositivo eliminado', 'success');

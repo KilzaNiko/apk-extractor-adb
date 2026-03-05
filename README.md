@@ -9,7 +9,7 @@ Herramienta local para extraer archivos APK y XAPK de dispositivos Android conec
 ### Gestión de Dispositivos
 - **Detección automática** de dispositivos Android conectados por USB.
 - **Depuración inalámbrica** (WiFi) — emparejar y conectar dispositivos sin cable.
-- **Dispositivos guardados** — los dispositivos vinculados por WiFi se guardan automáticamente para su reconexión con un solo clic.
+- **Dispositivos guardados** — los dispositivos vinculados por WiFi se guardan automáticamente para su reconexión con un solo clic. Si los puertos han caducado, se abre un asistente para re-vincular el dispositivo manteniendo la IP original.
 
 ### Extracción de Aplicaciones
 - **Listado de apps** con nombre, paquete, formato y tamaño.

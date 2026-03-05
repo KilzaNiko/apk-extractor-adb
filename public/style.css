@@ -1388,52 +1388,69 @@ html[data-theme="light"] .main-content {
   color: var(--red);
 }
 
-/* ── Saved Devices ───────────────────────────────────── */
-.saved-devices-step {
-  border-color: rgba(108, 99, 255, 0.2);
-  background: rgba(108, 99, 255, 0.04);
+/* ── Saved Devices (Sidebar) ─────────────────────────── */
+.saved-count-badge {
+  margin-left: auto;
+  background: var(--accent);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
 }
 
-.saved-devices-step .wireless-step-header {
-  margin-bottom: 10px;
-  font-size: 14px;
-  color: var(--accent2);
-}
-
-.saved-devices-list {
+.saved-devices-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+  padding: 4px 0.5rem 0.5rem;
+  animation: fadeIn 0.2s ease;
+}
+
+.saved-devices-sidebar.hidden {
+  display: none;
+}
+
+.saved-devices-empty {
+  font-size: 0.75rem;
+  color: var(--text3);
+  padding: 0.5rem 0.25rem;
+  text-align: center;
 }
 
 .saved-device-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  background: var(--bg);
+  gap: 6px;
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: 8px;
+  padding: 6px 8px;
   transition: all 0.2s ease;
 }
 
 .saved-device-card:hover {
   border-color: var(--accent);
-  box-shadow: 0 2px 12px rgba(108, 99, 255, 0.1);
+  box-shadow: 0 2px 8px rgba(108, 99, 255, 0.1);
 }
 
 .saved-device-info {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   min-width: 0;
   flex: 1;
 }
 
 .saved-device-icon {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1442,8 +1459,8 @@ html[data-theme="light"] .main-content {
 }
 
 .saved-device-icon svg {
-  width: 22px;
-  height: 22px;
+  width: 16px;
+  height: 16px;
 }
 
 .saved-device-text {
@@ -1452,7 +1469,7 @@ html[data-theme="light"] .main-content {
 }
 
 .saved-device-label {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text);
   overflow: hidden;
@@ -1461,49 +1478,51 @@ html[data-theme="light"] .main-content {
 }
 
 .saved-device-addr {
-  font-size: 11px;
+  font-size: 10px;
   font-family: var(--mono);
   color: var(--text3);
-  margin-top: 1px;
 }
 
 .saved-device-date {
-  font-size: 10px;
+  font-size: 9px;
   color: var(--text3);
   opacity: 0.7;
-  margin-top: 1px;
 }
 
 .saved-device-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
   flex-shrink: 0;
 }
 
 .saved-device-connect {
-  padding: 5px 12px !important;
-  font-size: 12px !important;
-  gap: 4px;
-  border-radius: 8px;
+  width: 26px !important;
+  height: 26px !important;
+  padding: 0 !important;
+  min-width: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
 }
 
 .saved-device-connect svg {
-  width: 13px !important;
-  height: 13px !important;
+  width: 12px !important;
+  height: 12px !important;
 }
 
 .saved-device-delete {
-  width: 28px !important;
-  height: 28px !important;
+  width: 26px !important;
+  height: 26px !important;
   padding: 0 !important;
-  min-width: 28px;
+  min-width: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--text3);
   cursor: pointer;
   transition: all 0.2s ease;
@@ -1516,6 +1535,6 @@ html[data-theme="light"] .main-content {
 }
 
 .saved-device-delete svg {
-  width: 12px !important;
-  height: 12px !important;
+  width: 11px !important;
+  height: 11px !important;
 }

@@ -118,6 +118,15 @@
         </button>
         <div id="device-list-sidebar"></div>
 
+        <button id="btn-saved-devices" class="nav-btn" onclick="toggleSavedDevices()">
+          <svg viewBox="0 0 20 20" fill="currentColor">
+            <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
+          </svg>
+          Dispositivos guardados
+          <span id="saved-devices-count" class="saved-count-badge hidden">0</span>
+        </button>
+        <div id="saved-devices-sidebar" class="saved-devices-sidebar hidden"></div>
+
         <div class="nav-section-label" style="margin-top:1rem">Conexión</div>
         <button class="nav-btn" onclick="openWirelessModal()">
           <svg viewBox="0 0 20 20" fill="currentColor">
@@ -344,16 +353,6 @@
         <span class="wireless-ip-hint">Ambos dispositivos deben estar en la misma red WiFi</span>
       </div>
 
-      <!-- Saved Devices -->
-      <div id="saved-devices-section" class="wireless-step saved-devices-step hidden">
-        <div class="wireless-step-header">
-          <svg viewBox="0 0 20 20" fill="currentColor" width="16" style="color:var(--accent)">
-            <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z"/>
-          </svg>
-          <span>Dispositivos Guardados</span>
-        </div>
-        <div id="saved-devices-list" class="saved-devices-list"></div>
-      </div>
 
       <!-- Step 1: Pair with WiFi code -->
       <div class="wireless-step">
@@ -426,6 +425,107 @@
           Conectar
         </button>
         <div id="connect-result" class="wireless-result hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── RECONNECT MODAL ── -->
+  <div id="modal-reconnect-overlay" class="modal-overlay hidden" onclick="closeReconnectModal(event)">
+    <div class="modal glass wireless-modal" id="modal-reconnect">
+      <div class="modal-header">
+        <div>
+          <h3>Reconectar Dispositivo</h3>
+          <div class="modal-meta" id="reconnect-device-label">–</div>
+        </div>
+        <button class="modal-close" onclick="closeReconnectModal()">
+          <svg viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd"
+              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+              clip-rule="evenodd" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="wireless-ip-bar" style="background:rgba(239,68,68,0.08);border-color:rgba(239,68,68,0.25)">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="16" style="color:var(--red)">
+          <path fill-rule="evenodd"
+            d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z"
+            clip-rule="evenodd" />
+        </svg>
+        <span style="color:var(--red)">Los puertos han caducado. Ingrese los nuevos datos de vinculación.</span>
+      </div>
+
+      <!-- Step 1: Re-pair -->
+      <div class="wireless-step">
+        <div class="wireless-step-header">
+          <span class="wireless-step-num">1</span>
+          <span>Vincular con nuevo código</span>
+        </div>
+        <div class="wireless-instructions">
+          En el dispositivo: <strong>Ajustes → Opciones de desarrollador → Depuración inalámbrica → Vincular dispositivo
+            con código de vinculación</strong>.
+        </div>
+        <div class="wireless-fields">
+          <div class="wireless-field-row">
+            <div class="wireless-field">
+              <label class="field-label">IP del dispositivo</label>
+              <input id="reconnect-pair-ip" type="text" class="field-input" readonly
+                style="opacity:0.6;cursor:not-allowed" />
+            </div>
+            <div class="wireless-field small">
+              <label class="field-label">Puerto</label>
+              <input id="reconnect-pair-port" type="text" class="field-input" placeholder="37XXX" />
+            </div>
+          </div>
+          <div class="wireless-field">
+            <label class="field-label">Código de vinculación (6 dígitos)</label>
+            <input id="reconnect-pair-code" type="text" class="field-input mono wireless-code-input"
+              placeholder="000000" maxlength="6" />
+          </div>
+        </div>
+        <button id="btn-reconnect-pair" class="btn btn-primary" onclick="reconnectPairDevice()">
+          <svg viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd"
+              d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
+              clip-rule="evenodd" />
+          </svg>
+          Emparejar
+        </button>
+        <div id="reconnect-pair-result" class="wireless-result hidden"></div>
+      </div>
+
+      <!-- Step 2: Reconnect -->
+      <div class="wireless-step">
+        <div class="wireless-step-header">
+          <span class="wireless-step-num">2</span>
+          <span>Conectar al dispositivo</span>
+        </div>
+        <div class="wireless-instructions">
+          Use la <strong>IP y el puerto</strong> que aparece en la pantalla principal de <strong>Depuración
+            inalámbrica</strong> (diferente al puerto del paso 1).
+        </div>
+        <div class="wireless-fields">
+          <div class="wireless-field-row">
+            <div class="wireless-field">
+              <label class="field-label">IP del dispositivo</label>
+              <input id="reconnect-connect-ip" type="text" class="field-input" readonly
+                style="opacity:0.6;cursor:not-allowed" />
+            </div>
+            <div class="wireless-field small">
+              <label class="field-label">Puerto</label>
+              <input id="reconnect-connect-port" type="text" class="field-input" placeholder="XXXXX" />
+            </div>
+          </div>
+        </div>
+        <button id="btn-reconnect-connect" class="btn btn-primary" onclick="reconnectConnectDevice()">
+          <svg viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd"
+              d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z"
+              clip-rule="evenodd" />
+          </svg>
+          Conectar
+        </button>
+        <div id="reconnect-connect-result" class="wireless-result hidden"></div>
       </div>
     </div>
   </div>
