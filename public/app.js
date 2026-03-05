@@ -292,6 +292,19 @@ function renderApps() {
     </div>`;
 }
 
+async function copyPackageName() {
+    const pkg = state.currentPkg;
+    if (!pkg) return;
+    try {
+        await navigator.clipboard.writeText(pkg);
+        const textEl = document.getElementById('copy-pkg-text');
+        textEl.textContent = '¡Copiado!';
+        setTimeout(() => { textEl.textContent = 'Copiar'; }, 2000);
+    } catch {
+        toast('No se pudo copiar', 'error');
+    }
+}
+
 /* ─── App Detail Modal ───────────────────────────────────────── */
 async function openAppDetail(pkg) {
     state.currentPkg = pkg;

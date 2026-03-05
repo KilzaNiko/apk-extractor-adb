@@ -919,6 +919,28 @@ html[data-theme="light"] .main-content {
   margin-top: 0.2rem;
 }
 
+.btn-copy-pkg {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text3);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-copy-pkg:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(108, 99, 255, 0.06);
+}
+
 .modal-close {
   width: 30px;
   height: 30px;
