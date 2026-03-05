@@ -459,8 +459,9 @@ app.post('/api/adb/connect', (req, res) => {
     if (success) {
       // Auto-save device on successful connection
       const devices = loadSavedDevices();
-      const existing = devices.find(d => d.ip === ip && d.port === port);
+      const existing = devices.find(d => d.ip === ip);
       if (existing) {
+        existing.port = port;
         existing.lastConnected = new Date().toISOString();
         if (label) existing.label = label;
       } else {
