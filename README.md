@@ -10,35 +10,35 @@ Herramienta local para extraer archivos APK y XAPK de dispositivos Android conec
 - **Detección automática** de dispositivos Android conectados por USB o WiFi.
 - **Monitoreo en tiempo real** (Web) — detecta automáticamente conexiones y desconexiones (polling cada 4 segundos).
 - **Soporte mDNS** — detecta dispositivos auto-conectados por depuración inalámbrica (formato `adb-*._adb-tls-connect._tcp`), resuelve su IP y muestra marca/modelo.
-- **Depuración inalámbrica** (WiFi) — emparejar y conectar dispositivos sin cable USB. Disponible tanto en la interfaz web como en la consola.
-- **Dispositivos guardados** — los dispositivos WiFi se guardan automáticamente para reconexión rápida. Si los puertos caducan, se ofrece un asistente de re-vinculación con la IP pre-cargada.
-- **Nombres personalizados** — se puede asignar un nombre a cualquier dispositivo (por serial) que persiste entre sesiones. El nombre se muestra en la interfaz web y en la consola para identificar dispositivos fácilmente.
-- **Indicador WiFi** (Web) — los dispositivos inalámbricos se identifican con un ícono 📶 en la barra lateral.
+- **Depuración inalámbrica** (WiFi) — emparejar y conectar dispositivos sin cable USB utilizando los códigos de Android 11+. Interfaz guiada, simple y directa tanto web como consola.
+- **Dispositivos guardados** — los dispositivos WiFi se guardan automáticamente para reconexión rápida. Si los puertos caducan, un asistente ayuda a revincular con la IP pre-cargada.
+- **Nombres personalizados** — se puede asignar un nombre propio a cualquier dispositivo (por serial) que persiste entre sesiones, facilitando la identificación.
 
 ### Extracción de Aplicaciones
-- **Listado de apps** con nombre, paquete, formato y tamaño.
+- **Nombres Reales (Web y CLI)** — ahora se muestra el verdadero nombre de la aplicación (ej. *WhatsApp*) además del nombre del paquete (ej. `com.whatsapp`).
+- **Información completa** con formato (APK / Split APK) y tamaño exacto.
 - **Filtrado** por tipo: usuario, sistema o todas.
-- **Búsqueda** por nombre o paquete.
-- **Copiar paquete** (Web) — botón para copiar el nombre del paquete al portapapeles desde la lista o el detalle.
+- **Búsqueda** instantánea integrada por nombre o paquete.
+- **Copiado rápido** (Web) — botón para copiar el nombre del paquete al portapapeles.
 - **Extracción de APK** — descarga directa del archivo `.apk`.
-- **Compilación de XAPK** — empaqueta Split APKs en un único archivo `.xapk` instalable.
+- **Compilación de XAPK** — empaqueta Split APKs en un único archivo instalable (`.xapk`).
 
-### ADB Integrado
-- **Descarga automática** de Android Platform Tools si no se encuentra instalado.
-- **Configuración manual** de la ruta si ya cuenta con ADB instalado.
-- La ruta se guarda en `config.txt` para usos futuros.
-
-### Interfaz Web
-- Diseño moderno con modo **claro y oscuro**.
-- Carga progresiva de información (batch loading).
-- Feedback visual en tiempo real durante las extracciones.
-- Notificaciones toast para conexiones, desconexiones y errores.
+### Interfaz Web Optimizada
+- **Diseño Responsivo (Mobile First)** — la interfaz se adapta inteligentemente a pantallas de teléfonos, pasando la barra lateral al inferior y los modales a pantalla completa.
+- **Carga Asíncrona (Batch)** — la información pesada (formatos y tamaños) carga en segundo plano con un popup discreto, sin bloquear el uso normal de la lista.
+- **Soporte Completo de Temas** — diseño pulido en modo claro y oscuro, con colores vibrantes y desenfoques tipo glassmorphism.
+- Notificaciones *toast* para conexiones, desconexiones y errores.
 
 ### Consola (CLI)
-- Menú interactivo con las mismas funcionalidades principales.
-- **Depuración inalámbrica** — vincular y conectar dispositivos por WiFi.
-- **Dispositivos guardados** — reconexión rápida, re-vinculación y eliminación.
-- **Nombres personalizados** — asignar y mostrar nombres desde el menú del dispositivo.
+- **Mejoras Visuales** — soporte de colores en la terminal (cyan, verde, amarillo, rojo) para una excelente legibilidad y experiencia.
+- Menú interactivo robusto con manejo nativo de errores y navegación paginada.
+- **Precisión Total** — utiliza métodos directos de Android (`du -b`) para calcular y mostrar el formato y tamaño 100% exactos de las apps.
+- Dispositivos guardados, conexión inalámbrica y nombramiento personalizado completamente disponibles desde el menú.
+
+### ADB Integrado
+- **Descarga automática** del Android Platform Tools oficial si no se encuentra instalado en el sistema.
+- **Configuración manual** para usar una versión preexistente de ADB en tu máquina.
+- Autoguardado de configuración (`config.txt`).
 
 ---
 

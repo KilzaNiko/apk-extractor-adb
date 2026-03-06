@@ -261,6 +261,21 @@ async function loadApps() {
 async function loadBatchInfo(packages) {
     state.batchInfoLoading = true;
     const CHUNK = 20;
+    const total = packages.length;
+
+    // ── Show popup ──────────────────────────────────────────────
+    const popup = document.getElementById('batch-popup');
+    const popupTitle = document.getElementById('batch-popup-title');
+    const spinner = document.getElementById('batch-popup-spinner');
+    const check = document.getElementById('batch-popup-check');
+
+    popup.classList.remove('hidden', 'done');
+    spinner.classList.remove('hidden');
+    check.classList.add('hidden');
+    popupTitle.textContent = 'Cargando datos…';
+
+    let loaded = 0;
+
     for (let i = 0; i < packages.length; i += CHUNK) {
         const chunk = packages.slice(i, i + CHUNK);
         try {
@@ -286,9 +301,34 @@ async function loadBatchInfo(packages) {
                 ? state.apps.filter(a => a.pkg.toLowerCase().includes(q) || (a.name && a.name.toLowerCase().includes(q)))
                 : [...state.apps];
             renderApps();
+
+            // ── Update popup progress ────────────────────────────
+            loaded = Math.min(i + CHUNK, total);
+
+            // Allow browser to repaint so progress is visible
+            await new Promise(r => setTimeout(r, 10));
         } catch { break; }
     }
+
+    // ── Done state ───────────────────────────────────────────────
     state.batchInfoLoading = false;
+    popupTitle.textContent = '¡Datos cargados!';
+    spinner.classList.add('hidden');
+    check.classList.remove('hidden');
+    popup.classList.add('done');
+
+    // Auto-hide after 3 s
+    setTimeout(() => {
+        popup.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+        popup.style.opacity = '0';
+        popup.style.transform = 'translateX(24px)';
+        setTimeout(() => {
+            popup.classList.add('hidden');
+            popup.style.opacity = '';
+            popup.style.transform = '';
+            popup.style.transition = '';
+        }, 400);
+    }, 3000);
 }
 
 function switchFilter(type) {

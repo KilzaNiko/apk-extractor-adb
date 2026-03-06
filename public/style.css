@@ -24,6 +24,8 @@
   --font: 'Inter', system-ui, sans-serif;
   --mono: 'JetBrains Mono', monospace;
   --transition: 0.2s cubic-bezier(.4, 0, .2, 1);
+  --modal-bg: #141824;
+  --xapk-log-bg: rgba(0, 0, 0, 0.45);
 }
 
 /* ── Light theme ──────────────────────────────────────── */
@@ -43,7 +45,10 @@ html[data-theme="light"] {
   --text: #111827;
   --text2: #374151;
   --text3: #6b7280;
+  --modal-bg: #ffffff;
+  --xapk-log-bg: rgba(0, 0, 0, 0.05);
 }
+
 
 *,
 *::before,
@@ -937,6 +942,9 @@ html[data-theme="light"] .main-content {
   padding: 1.75rem;
   box-shadow: 0 32px 80px rgba(0, 0, 0, 0.7);
   animation: slideUp 0.25s cubic-bezier(.4, 0, .2, 1);
+  background: var(--modal-bg) !important;
+  backdrop-filter: blur(20px) saturate(1.5);
+  border: 1px solid var(--border);
 }
 
 .modal-header {
@@ -1130,10 +1138,22 @@ html[data-theme="light"] .main-content {
   border: 1px solid rgba(34, 197, 94, 0.25);
 }
 
+html[data-theme="light"] .fmt-badge.apk {
+  color: #15803d;
+  background: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
 .fmt-badge.split {
   background: rgba(234, 179, 8, 0.12);
   color: #facc15;
   border: 1px solid rgba(234, 179, 8, 0.25);
+}
+
+html[data-theme="light"] .fmt-badge.split {
+  color: #92400e;
+  background: rgba(234, 179, 8, 0.18);
+  border-color: rgba(234, 179, 8, 0.40);
 }
 
 .fmt-badge.na {
@@ -1174,7 +1194,7 @@ html[data-theme="light"] .main-content {
 
 /* ── XAPK Progress Log ────────────────────────────────── */
 .xapk-log {
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--xapk-log-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.75rem 1rem;
@@ -1220,7 +1240,78 @@ html[data-theme="light"] .main-content {
   }
 }
 
+/* ── Batch-info progress popup ────────────────────────── */
+.batch-popup {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 990;
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.875rem 1.125rem;
+  border-radius: var(--radius);
+  background: var(--modal-bg);
+  border: 1px solid var(--border2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  min-width: 240px;
+  max-width: 300px;
+  animation: slideInRight 0.3s cubic-bezier(.4, 0, .2, 1);
+  transition: background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
+}
+
+.batch-popup.done {
+  background: rgba(22, 163, 74, 0.15);
+  border-color: rgba(34, 197, 94, 0.4);
+  box-shadow: 0 8px 32px rgba(34, 197, 94, 0.15);
+}
+
+html[data-theme="light"] .batch-popup.done {
+  background: rgba(22, 163, 74, 0.12);
+  border-color: rgba(22, 163, 74, 0.45);
+}
+
+.batch-popup-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+
+.batch-spinner {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+}
+
+.batch-check {
+  width: 22px;
+  height: 22px;
+  color: var(--green);
+}
+
+.batch-popup-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.batch-popup-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.batch-popup.done .batch-popup-title {
+  color: var(--green);
+}
+
 /* ── Toast ────────────────────────────────────────────── */
+
 #toast-container {
   position: fixed;
   bottom: 1.5rem;
@@ -1600,4 +1691,102 @@ html[data-theme="light"] .main-content {
 .saved-device-delete svg {
   width: 11px !important;
   height: 11px !important;
+}
+
+/* ── Responsive Design (Mobile) ───────────────────────── */
+@media (max-width: 768px) {
+  #screen-main {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    height: auto;
+    border-right: none;
+    border-top: 1px solid var(--border);
+    order: 2;
+    /* Move to bottom */
+    padding: 10px;
+    border-radius: 12px 12px 0 0;
+  }
+
+  .sidebar-header {
+    display: none;
+    /* Hide logo on mobile main screen */
+  }
+
+  .sidebar-nav {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 0;
+  }
+
+  .nav-section-label {
+    display: none;
+  }
+
+  .nav-btn {
+    flex: 1;
+    min-width: calc(50% - 4px);
+    justify-content: center;
+    padding: 10px;
+  }
+
+  .sidebar-footer {
+    padding-top: 10px;
+    flex-direction: row;
+  }
+
+  .main-content {
+    order: 1;
+    /* Move to top */
+    height: 100%;
+    padding: 12px;
+  }
+
+  .app-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-btns {
+    justify-content: center;
+  }
+
+  .apps-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .modal {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    margin: 0;
+  }
+
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .batch-popup {
+    bottom: 12px;
+    right: 12px;
+    left: 12px;
+    min-width: 0;
+    max-width: none;
+  }
+
+  #toast-container {
+    bottom: 80px;
+    /* Above the bottom popup/sidebar */
+    left: 12px;
+    right: 12px;
+  }
+
+  .toast {
+    width: 100%;
+  }
 }
