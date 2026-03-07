@@ -178,14 +178,15 @@ body {
 }
 
 .logo-icon.small {
-  width: 40px;
-  height: 40px;
-  border-radius: 11px;
+  width: 34px;
+  height: 48px;
+  border-radius: 16px;
+  box-shadow: none;
 }
 
 .logo-icon.small svg {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
 }
 
 .setup-section {
@@ -397,6 +398,7 @@ body {
 .sidebar-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.875rem;
   padding: 0 1.25rem 1.25rem;
   border-bottom: 1px solid var(--border);
@@ -408,6 +410,13 @@ body {
   font-weight: 600;
 }
 
+.sidebar-header-titles {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .adb-path-label {
   font-size: 0.65rem;
   color: var(--text3);
@@ -415,7 +424,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 160px;
+  max-width: 140px;
 }
 
 .sidebar-nav {
@@ -1308,6 +1317,101 @@ html[data-theme="light"] .batch-popup.done {
 
 .batch-popup.done .batch-popup-title {
   color: var(--green);
+}
+
+/* ── Console Button ─────────────────────────────────────── */
+.btn-icon {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+
+.btn-icon:hover {
+  background: var(--surface2);
+  color: var(--text);
+  border-color: var(--border2);
+}
+
+.btn-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ── Console / Terminal Modal ──────────────────────────── */
+.console-modal {
+  max-width: 600px;
+  width: 90%;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 80vh;
+}
+
+.console-modal .modal-header {
+  padding: 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.server-terminal {
+  flex: 1;
+  background: #000;
+  color: #a9b7c6;
+  padding: 16px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-work;
+}
+
+.server-terminal::-webkit-scrollbar {
+  width: 8px;
+}
+
+.server-terminal::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.log-entry {
+  margin-bottom: 4px;
+  display: flex;
+  gap: 8px;
+}
+
+.log-ts {
+  color: #6a8759;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.log-msg {
+  color: #a9b7c6;
+  word-break: break-all;
+}
+
+.log-msg.error {
+  color: #ff6b68;
+}
+
+.shutdown-btn {
+  margin-top: auto;
+  opacity: 0.85;
+}
+
+.shutdown-btn:hover {
+  opacity: 1;
 }
 
 /* ── Toast ────────────────────────────────────────────── */

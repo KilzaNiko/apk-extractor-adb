@@ -38,14 +38,22 @@ if not exist "node_modules\express" (
     echo.
 )
 
-echo  Iniciando servidor en http://localhost:3000
-echo  Presiona Ctrl+C para detener el servidor.
+echo  Iniciando servidor en segundo plano...
+echo  Se abrirá una interfaz web en unos segundos.
 echo.
 
-:: Abrir el navegador tras 1.5 segundos
-start "" /b cmd /c "timeout /t 2 /nobreak >nul && start http://localhost:3000"
+:: Crear un script VBS temporal para ejecutar node de forma invisible
+set "VBS_FILE=%TEMP%\start_apk_extractor.vbs"
+echo Set WshShell = CreateObject("WScript.Shell") > "%VBS_FILE%"
+echo WshShell.Run "cmd.exe /c node ""%~dp0server.js""", 0, False >> "%VBS_FILE%"
 
-:: Iniciar servidor
-node server.js
+:: Ejecutar el servidor en segundo plano
+cscript //nologo "%VBS_FILE%"
 
-pause
+:: Abrir el navegador
+timeout /t 2 /nobreak >nul
+start http://localhost:3000
+
+:: Eliminar el script temporal
+del "%VBS_FILE%"
+exit

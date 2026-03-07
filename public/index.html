@@ -13,7 +13,7 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
     rel="stylesheet" />
   <link rel="icon"
-    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'><rect x='10' y='6' width='28' height='36' rx='4' fill='%236c63ff'/></svg>" />
+    href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📦</text></svg>">
   <link rel="stylesheet" href="style.css" />
 </head>
 
@@ -104,6 +104,13 @@
           <h2>APK Extractor</h2>
           <span id="adb-path-label" class="mono adb-path-label"></span>
         </div>
+        <button id="btn-show-console" class="btn-icon" onclick="openConsoleModal()" title="Consola del Servidor">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width: 20px; height: 20px;">
+            <path fill-rule="evenodd"
+              d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3.293 3.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L7.586 12 5.293 9.707a1 1 0 010-1.414zM11 12a1 1 0 100 2h3a1 1 0 100-2h-3z"
+              clip-rule="evenodd" />
+          </svg>
+        </button>
       </div>
 
       <nav class="sidebar-nav">
@@ -162,6 +169,14 @@
               clip-rule="evenodd" />
           </svg>
           Reconfigurar ADB
+        </button>
+        <button class="nav-btn danger shutdown-btn" onclick="shutdownServer()">
+          <svg viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd"
+              d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z"
+              clip-rule="evenodd" />
+          </svg>
+          Apagar Servidor
         </button>
       </div>
     </aside>
@@ -552,6 +567,59 @@
     </div>
     <div class="batch-popup-body">
       <div class="batch-popup-title" id="batch-popup-title">Cargando datos…</div>
+    </div>
+  </div>
+
+  <!-- ── SERVER LOGS MODAL ── -->
+  <div id="modal-console-overlay" class="modal-overlay hidden" onclick="closeConsoleModal(event)">
+    <div class="modal glass console-modal" id="modal-console">
+      <div class="modal-header">
+        <div>
+          <h3>Consola del Servidor</h3>
+          <div class="modal-meta">Logs y actividad en segundo plano</div>
+        </div>
+        <button class="modal-close" onclick="closeConsoleModal()">
+          <svg viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd"
+              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+              clip-rule="evenodd" />
+          </svg>
+        </button>
+      </div>
+      <div class="server-terminal mono" id="server-terminal-content">
+        <!-- Logs will be streamed here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ── OFFLINE SCREEN ── -->
+  <div id="screen-offline" class="screen hidden"
+    style="display: flex; align-items: center; justify-content: center; z-index: 100;">
+    <div class="setup-bg"></div>
+    <div class="setup-card glass" style="text-align: center;">
+      <div class="setup-logo" style="margin-bottom: 2rem;">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="48" style="color:var(--red);margin-bottom:1rem;">
+          <path fill-rule="evenodd"
+            d="M10 2a8 8 0 100 16 8 8 0 000-16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 100-2H9V8a1 1 0 00-1-1z"
+            clip-rule="evenodd" />
+        </svg>
+        <h1 style="font-size: 1.5rem;">Servidor Apagado</h1>
+        <p class="subtitle" style="margin-top: 0.5rem">El servidor local y la terminal han sido detenidos de forma
+          segura. Ya puedes cerrar esta ventana.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CUSTOM CONFIRM MODAL ── -->
+  <div id="modal-confirm-overlay" class="modal-overlay hidden" style="z-index: 9999;">
+    <div class="modal glass" id="modal-confirm" style="max-width: 400px; padding: 24px; text-align: center;">
+      <h3 id="confirm-title" style="margin-bottom: 12px;">Confirmar</h3>
+      <p id="confirm-message" class="subtitle" style="margin-bottom: 24px;"></p>
+      <div style="display: flex; gap: 12px; justify-content: center;">
+        <button class="btn btn-secondary" onclick="closeConfirmModal()">Cancelar</button>
+        <button class="btn btn-primary" id="confirm-accept-btn"
+          style="background:var(--red); color: white; border: none;">Aceptar</button>
+      </div>
     </div>
   </div>
 

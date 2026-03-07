@@ -27,6 +27,9 @@ Herramienta local para extraer archivos APK y XAPK de dispositivos Android conec
 - **Diseño Responsivo (Mobile First)** — la interfaz se adapta inteligentemente a pantallas de teléfonos, pasando la barra lateral al inferior y los modales a pantalla completa.
 - **Carga Asíncrona (Batch)** — la información pesada (formatos y tamaños) carga en segundo plano con un popup discreto, sin bloquear el uso normal de la lista.
 - **Soporte Completo de Temas** — diseño pulido en modo claro y oscuro, con colores vibrantes y desenfoques tipo glassmorphism.
+- **Servidor Discreto** — ahora el launcher web arranca el servidor en segundo plano completamente invisible.
+- **Bandeja de Sistema (SysTray)** — un ícono nativo de Windows (abajo a la derecha) permite reabrir la interfaz web si la cierras o apagar el servidor fácilmente.
+- **Consola Integrada** — un botón en la esquina de la interfaz web permite observar los registros locales y los errores en tiempo real, sin requerir una ventana CMD negra.
 - Notificaciones *toast* para conexiones, desconexiones y errores.
 
 ### Consola (CLI)
@@ -77,9 +80,12 @@ start-web.bat
 
 Este script:
 1. Verifica que Node.js esté instalado.
-2. Instala las dependencias automáticamente (`npm install`).
-3. Inicia el servidor en `http://localhost:3000`.
-4. Abre el navegador de forma automática.
+2. Instala las dependencias automáticamente (`npm install` y librerías opcionales como `systray2`).
+3. Inicia el servidor `server.js` de forma invisible en segundo plano usando VBScript.
+4. Genera un **ícono en la bandeja del sistema de Windows** (cerca de la hora) para poder interactuar.
+5. Abre el navegador web predeterminado automáticamente apuntando a `http://localhost:3000`.
+
+Al cerrar la pestaña del navegador, el servidor seguirá funcionando en segundo plano. Puedes reabrir la interfaz o apagar el servidor completamente haciendo clic derecho sobre el ícono de la bandeja de sistema, o usando el botón rojo "Apagar Servidor" disponible dentro de la propia interfaz web.
 
 ### Consola (Sin Node.js)
 

@@ -23,6 +23,7 @@ async function init() {
         if (data.configured) {
             state.adbPath = data.adbPath;
             showMainApp();
+            setupLogsStream();
         } else {
             showSetupOptions();
         }
@@ -931,9 +932,30 @@ async function connectWirelessDevice() {
 }
 
 /* ─── Utils ──────────────────────────────────────────────────── */
+function showConfirm(title, message, onAccept) {
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-message').textContent = message;
+
+    const acceptBtn = document.getElementById('confirm-accept-btn');
+    // Remove old listeners by cloning
+    const newAcceptBtn = acceptBtn.cloneNode(true);
+    acceptBtn.parentNode.replaceChild(newAcceptBtn, acceptBtn);
+
+    newAcceptBtn.onclick = () => {
+        closeConfirmModal();
+        if (onAccept) onAccept();
+    };
+    show('modal-confirm-overlay');
+}
+
+function closeConfirmModal() {
+    hide('modal-confirm-overlay');
+}
+
 function resetConfig() {
-    if (!confirm('¿Reconfigurar ADB? Se borrará la ruta guardada.')) return;
-    fetch('/api/config', { method: 'DELETE' }).catch(() => { }).finally(() => location.reload());
+    showConfirm('Reconfigurar ADB', '¿Estás seguro? Se borrará la ruta guardada y tendrás que configurarlo de nuevo.', () => {
+        fetch('/api/config', { method: 'DELETE' }).catch(() => { }).finally(() => location.reload());
+    });
 }
 
 function applyTheme(theme) {
@@ -963,8 +985,75 @@ function toast(msg, type = 'info', duration = 4000) {
 }
 
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { closeModal(); closeWirelessModal(); }
+    if (e.key === 'Escape') { closeModal(); closeWirelessModal(); closeConsoleModal(); }
     if (e.key === 'r' && e.ctrlKey) { e.preventDefault(); loadDevices(); }
 });
+
+/* ─── Server Console Logs ────────────────────────────────────── */
+let logsEvtSource = null;
+
+function setupLogsStream() {
+    if (logsEvtSource) return;
+    const term = document.getElementById('server-terminal-content');
+    logsEvtSource = new EventSource('/api/logs/stream');
+
+    logsEvtSource.onmessage = (ev) => {
+        const entry = JSON.parse(ev.data);
+        const time = new Date(entry.ts).toLocaleTimeString('en-US', { hour12: false });
+
+        const div = document.createElement('div');
+        div.className = 'log-entry';
+
+        const tsSpan = document.createElement('span');
+        tsSpan.className = 'log-ts';
+        tsSpan.textContent = `[${time}]`;
+
+        const msgSpan = document.createElement('span');
+        msgSpan.className = `log-msg ${entry.type === 'error' ? 'error' : ''}`;
+        msgSpan.textContent = entry.msg;
+
+        div.appendChild(tsSpan);
+        div.appendChild(msgSpan);
+        term.appendChild(div);
+
+        // Auto-scroll logic if near bottom
+        if (term.scrollHeight - term.scrollTop < term.clientHeight + 100) {
+            term.scrollTop = term.scrollHeight;
+        }
+    };
+
+    logsEvtSource.onerror = () => {
+        logsEvtSource.close();
+        logsEvtSource = null;
+        setTimeout(setupLogsStream, 5000); // Reconnect attempt
+    };
+}
+
+function openConsoleModal() {
+    show('modal-console-overlay');
+    const term = document.getElementById('server-terminal-content');
+    term.scrollTop = term.scrollHeight;
+}
+
+function closeConsoleModal(e) {
+    if (e && e.target !== document.getElementById('modal-console-overlay')) return;
+    hide('modal-console-overlay');
+}
+
+/* ─── Shutdown Server ────────────────────────────────────────── */
+function shutdownServer() {
+    showConfirm('Apagar Servidor', '¿Estás seguro de que quieres apagar el servidor local? La aplicación se detendrá y esta ventana ya no mostrará datos actualizados.', async () => {
+        try {
+            await fetch('/api/shutdown', { method: 'POST' });
+        } catch { } // It might fail if the server closes before responding
+
+        document.getElementById('screen-main').classList.add('hidden');
+        document.getElementById('screen-setup').classList.add('hidden');
+        document.getElementById('screen-offline').classList.remove('hidden');
+
+        if (logsEvtSource) logsEvtSource.close();
+        if (pollTimer) clearInterval(pollTimer);
+    });
+}
 
 init();

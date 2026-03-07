@@ -3,12 +3,18 @@ const { execSync, exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const SysTray = require('systray2').default;
 
 const app = express();
 const PORT = 3000;
 const CONFIG_FILE = path.join(__dirname, 'config.txt');
 const DEVICES_FILE = path.join(__dirname, 'devices.json');
 const NAMES_FILE = path.join(__dirname, 'device-names.json');
+
+let systray = null;
+const TRAY_ICON_BASE64 = fs.existsSync(path.join(__dirname, 'icon-b64.txt'))
+  ? fs.readFileSync(path.join(__dirname, 'icon-b64.txt'), 'utf8').trim()
+  : '';
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -627,8 +633,108 @@ app.delete('/api/device-names/:serial', (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── Logging & Shutdown ───────────────────────────────────────────────────────
+
+const logHistory = [];
+const logClients = new Set();
+const maxLogHistory = 500;
+
+function broadcastLog(msg, type = 'info') {
+  const logEntry = { ts: new Date().toISOString(), type, msg };
+  logHistory.push(logEntry);
+  if (logHistory.length > maxLogHistory) logHistory.shift();
+
+  // Send to all connected clients
+  const sseData = `data: ${JSON.stringify(logEntry)}\n\n`;
+  for (const client of logClients) {
+    client.write(sseData);
+  }
+}
+
+// Intercept console.log and console.error
+const origLog = console.log;
+const origErr = console.error;
+console.log = (...args) => {
+  origLog.apply(console, args);
+  const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+  broadcastLog(msg, 'info');
+};
+console.error = (...args) => {
+  origErr.apply(console, args);
+  const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+  broadcastLog(msg, 'error');
+};
+
+app.get('/api/logs/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  // Send history immediately
+  for (const entry of logHistory) {
+    res.write(`data: ${JSON.stringify(entry)}\n\n`);
+  }
+
+  logClients.add(res);
+  req.on('close', () => logClients.delete(res));
+});
+
+app.post('/api/shutdown', (req, res) => {
+  res.json({ ok: true });
+  console.log('🛑 Apagando el servidor local...');
+  if (systray) {
+    try { systray.kill(false); } catch { }
+  }
+  setTimeout(() => process.exit(0), 1000);
+});
+
 // ─── Start ────────────────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
+app.listen(PORT, '127.0.0.1', () => {
   console.log(`\n  APK Extractor corriendo en http://localhost:${PORT}\n`);
+
+  if (TRAY_ICON_BASE64) {
+    systray = new SysTray({
+      menu: {
+        icon: TRAY_ICON_BASE64,
+        title: "APK Extractor",
+        tooltip: "APK Extractor - Running on port " + PORT,
+        items: [
+          {
+            title: "Abrir Interfaz Web",
+            tooltip: "Abre la ventana del navegador",
+            checked: false,
+            enabled: true
+          },
+          {
+            title: "Apagar Servidor",
+            tooltip: "Detiene el servidor oculto",
+            checked: false,
+            enabled: true
+          }
+        ]
+      },
+      debug: false,
+      copyDir: true
+    });
+
+    systray.onClick(action => {
+      if (action.seq_id === 0) {
+        // Abrir Interfaz Web
+        const startCmd = os.platform() === 'win32' ? 'start' : 'xdg-open';
+        exec(`${startCmd} http://localhost:${PORT}`);
+      } else if (action.seq_id === 1) {
+        // Apagar Servidor
+        console.log('🛑 Servidor cerrado desde el Tray Icon');
+        systray.kill(false);
+        setTimeout(() => process.exit(0), 500);
+      }
+    });
+
+    systray.ready().then(() => {
+      console.log('✅ Icono de bandeja de sistema iniciado');
+    }).catch(err => {
+      console.error('⚠️ No se pudo iniciar el icono de la bandeja', err);
+    });
+  }
 });
