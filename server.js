@@ -19,12 +19,19 @@ const TRAY_ICON_BASE64 = fs.existsSync(path.join(__dirname, 'icon-b64.txt'))
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ─── In-memory caches ─────────────────────────────────────────────────────────
+
+let _adbPathCache = null;        // string | null
+let _savedDevicesCache = null;   // array | null
+let _deviceNamesCache = null;    // object | null
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getAdbPath() {
+  if (_adbPathCache) return _adbPathCache;
   if (fs.existsSync(CONFIG_FILE)) {
     const saved = fs.readFileSync(CONFIG_FILE, 'utf8').trim();
-    if (saved && fs.existsSync(saved)) return saved;
+    if (saved && fs.existsSync(saved)) { _adbPathCache = saved; return saved; }
   }
   try {
     const found = execSync('where adb', { encoding: 'utf8' }).trim().split('\n')[0].trim();
@@ -36,45 +43,76 @@ function getAdbPath() {
 }
 
 function saveAdbPath(p) {
-  fs.writeFileSync(CONFIG_FILE, p.trim(), 'utf8');
+  _adbPathCache = p.trim();
+  fs.writeFileSync(CONFIG_FILE, _adbPathCache, 'utf8');
 }
 
 function loadSavedDevices() {
+  if (_savedDevicesCache) return _savedDevicesCache;
   try {
     if (fs.existsSync(DEVICES_FILE)) {
-      return JSON.parse(fs.readFileSync(DEVICES_FILE, 'utf8'));
+      _savedDevicesCache = JSON.parse(fs.readFileSync(DEVICES_FILE, 'utf8'));
+      return _savedDevicesCache;
     }
   } catch { }
-  return [];
+  _savedDevicesCache = [];
+  return _savedDevicesCache;
 }
 
 function writeSavedDevices(devices) {
+  _savedDevicesCache = devices;
   fs.writeFileSync(DEVICES_FILE, JSON.stringify(devices, null, 2), 'utf8');
 }
 
 function loadDeviceNames() {
+  if (_deviceNamesCache) return _deviceNamesCache;
   try {
     if (fs.existsSync(NAMES_FILE)) {
-      return JSON.parse(fs.readFileSync(NAMES_FILE, 'utf8'));
+      _deviceNamesCache = JSON.parse(fs.readFileSync(NAMES_FILE, 'utf8'));
+      return _deviceNamesCache;
     }
   } catch { }
-  return {};
+  _deviceNamesCache = {};
+  return _deviceNamesCache;
 }
 
 function writeDeviceNames(names) {
+  _deviceNamesCache = names;
   fs.writeFileSync(NAMES_FILE, JSON.stringify(names, null, 2), 'utf8');
 }
 
-function runAdb(args, serial = null, timeout = 15000) {
+// ─── ADB helpers (async) ──────────────────────────────────────────────────────
+
+function execAsync(cmd, timeout = 15000) {
+  return new Promise((resolve, reject) => {
+    exec(cmd, { encoding: 'utf8', timeout }, (err, stdout, stderr) => {
+      if (err) reject(err);
+      else resolve(stdout);
+    });
+  });
+}
+
+function adbCmd(args, serial = null) {
   const adb = getAdbPath();
   if (!adb) throw new Error('ADB no configurado');
   const serialFlag = serial ? `-s "${serial}"` : '';
-  const cmd = `"${adb}" ${serialFlag} ${args}`;
-  return execSync(cmd, { encoding: 'utf8', timeout });
+  return `"${adb}" ${serialFlag} ${args}`;
 }
 
-function tryRunAdb(args, serial = null, fallback = '') {
-  try { return runAdb(args, serial); } catch { return fallback; }
+async function runAdb(args, serial = null, timeout = 15000) {
+  return execAsync(adbCmd(args, serial), timeout);
+}
+
+async function tryRunAdb(args, serial = null, fallback = '') {
+  try { return await runAdb(args, serial); } catch { return fallback; }
+}
+
+// Synchronous fallback used only in startup/config (before server is listening)
+function runAdbSync(args, serial = null, timeout = 15000) {
+  const adb = getAdbPath();
+  if (!adb) throw new Error('ADB no configurado');
+  const serialFlag = serial ? `-s "${serial}"` : '';
+  return execSync(`"${adb}" ${serialFlag} ${args}`, { encoding: 'utf8', timeout });
 }
 
 // ─── API: Status / Config ──────────────────────────────────────────────────────
@@ -86,6 +124,7 @@ app.get('/api/status', (req, res) => {
 
 app.delete('/api/config', (req, res) => {
   try { if (fs.existsSync(CONFIG_FILE)) fs.unlinkSync(CONFIG_FILE); } catch { }
+  _adbPathCache = null;
   res.json({ ok: true });
 });
 
@@ -133,9 +172,9 @@ app.get('/api/config/download', (req, res) => {
 // ─── API: Devices ──────────────────────────────────────────────────────────────
 
 // Lightweight poll — just returns serial list (fast, no getprop)
-app.get('/api/devices/poll', (req, res) => {
+app.get('/api/devices/poll', async (req, res) => {
   try {
-    const out = runAdb('devices', null, 5000);
+    const out = await runAdb('devices', null, 5000);
     const lines = out.split('\n').slice(1);
     const serials = [];
     for (const line of lines) {
@@ -151,78 +190,92 @@ app.get('/api/devices/poll', (req, res) => {
   }
 });
 
-app.get('/api/devices', (req, res) => {
+app.get('/api/devices', async (req, res) => {
   try {
-    const out = runAdb('devices');
+    const out = await runAdb('devices');
     const lines = out.split('\n').slice(1);
-    const devices = [];
     const deviceNames = loadDeviceNames();
+
+    // Collect serials first
+    const pending = [];
     for (const line of lines) {
       const tabIdx = line.indexOf('\t');
       if (tabIdx === -1) continue;
       const serial = line.substring(0, tabIdx).trim();
       const status = line.substring(tabIdx).trim();
-      if (status === 'device' && serial) {
-        const isWireless = serial.includes(':') || serial.includes('._adb');
-        let label = serial;
-        let ip = null;
+      if (status === 'device' && serial) pending.push(serial);
+    }
 
-        // Try to get brand/model for display
-        try {
-          const brand = runAdb('shell getprop ro.product.manufacturer', serial, 5000).trim();
-          const model = runAdb('shell getprop ro.product.model', serial, 5000).trim();
-          if (brand && model && brand !== 'N/A') label = `${brand} ${model}`;
-        } catch { }
+    // Fetch brand+model for all devices in parallel using a single shell command each
+    const devices = await Promise.all(pending.map(async (serial) => {
+      const isWireless = serial.includes(':') || serial.includes('._adb');
+      let label = serial;
+      let ip = null;
 
-        // Resolve IP for wireless devices
-        if (isWireless) {
-          if (serial.includes(':') && !serial.includes('._adb')) {
-            // Standard ip:port format
-            ip = serial.split(':')[0];
-          } else {
-            // mDNS format — resolve IP from device's network config
-            try {
-              const ipOut = runAdb('shell ip route', serial, 5000).trim();
-              const srcMatch = ipOut.match(/src\s+([\d.]+)/);
-              if (srcMatch) ip = srcMatch[1];
-            } catch { }
-          }
+      try {
+        // Single shell call to get both brand and model
+        const props = await runAdb(
+          `shell "getprop ro.product.manufacturer && getprop ro.product.model"`,
+          serial, 5000
+        );
+        const lines = props.trim().split('\n').map(l => l.trim());
+        const brand = lines[0] || '';
+        const model = lines[1] || '';
+        if (brand && model && brand !== 'N/A') label = `${brand} ${model}`;
+      } catch { }
 
-          // Auto-update saved device if IP matches
-          if (ip) {
-            try {
-              const saved = loadSavedDevices();
-              const existing = saved.find(d => d.ip === ip);
-              if (existing) {
-                existing.lastConnected = new Date().toISOString();
-                if (label !== serial) existing.label = label;
-                writeSavedDevices(saved);
-              }
-            } catch { }
-          }
+      // Resolve IP for wireless devices
+      if (isWireless) {
+        if (serial.includes(':') && !serial.includes('._adb')) {
+          ip = serial.split(':')[0];
+        } else {
+          try {
+            const ipOut = await runAdb('shell ip route', serial, 5000);
+            const srcMatch = ipOut.match(/src\s+([\d.]+)/);
+            if (srcMatch) ip = srcMatch[1];
+          } catch { }
         }
 
-        const customName = deviceNames[serial] || null;
-        devices.push({ serial, status, label, ip, wireless: isWireless, customName });
+        // Auto-update saved device if IP matches
+        if (ip) {
+          try {
+            const saved = loadSavedDevices();
+            const existing = saved.find(d => d.ip === ip);
+            if (existing) {
+              existing.lastConnected = new Date().toISOString();
+              if (label !== serial) existing.label = label;
+              writeSavedDevices(saved);
+            }
+          } catch { }
+        }
       }
-    }
+
+      const customName = deviceNames[serial] || null;
+      return { serial, status: 'device', label, ip, wireless: isWireless, customName };
+    }));
+
     res.json({ devices });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.get('/api/devices/:serial/info', (req, res) => {
+app.get('/api/devices/:serial/info', async (req, res) => {
   const { serial } = req.params;
   try {
-    const prop = (key) => { try { return runAdb(`shell getprop ${key}`, serial).trim(); } catch { return 'N/A'; } };
+    // Fetch all props in a single shell command
+    const props = await runAdb(
+      `shell "getprop ro.product.manufacturer && getprop ro.product.model && getprop ro.build.version.release && getprop ro.build.version.sdk && getprop ro.product.device"`,
+      serial, 8000
+    );
+    const ls = props.trim().split('\n').map(l => l.trim());
     res.json({
       serial,
-      brand: prop('ro.product.manufacturer'),
-      model: prop('ro.product.model'),
-      android: prop('ro.build.version.release'),
-      sdk: prop('ro.build.version.sdk'),
-      device: prop('ro.product.device'),
+      brand: ls[0] || 'N/A',
+      model: ls[1] || 'N/A',
+      android: ls[2] || 'N/A',
+      sdk: ls[3] || 'N/A',
+      device: ls[4] || 'N/A',
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -232,12 +285,12 @@ app.get('/api/devices/:serial/info', (req, res) => {
 // ─── API: Apps ────────────────────────────────────────────────────────────────
 
 // Returns bare package list (fast)
-app.get('/api/devices/:serial/apps', (req, res) => {
+app.get('/api/devices/:serial/apps', async (req, res) => {
   const { serial } = req.params;
   const { type = 'user' } = req.query;
   const flag = type === 'user' ? '-3' : type === 'system' ? '-s' : '';
   try {
-    const out = runAdb(`shell pm list packages ${flag}`, serial, 30000);
+    const out = await runAdb(`shell pm list packages ${flag}`, serial, 30000);
     const packages = out.split('\n')
       .map(l => l.trim().replace(/^package:/, ''))
       .filter(Boolean)
@@ -249,10 +302,13 @@ app.get('/api/devices/:serial/apps', (req, res) => {
 });
 
 // Returns enriched info for ONE package (name, format, size, paths)
-app.get('/api/devices/:serial/apps/:package/info', (req, res) => {
+app.get('/api/devices/:serial/apps/:package/info', async (req, res) => {
   const { serial, package: pkg } = req.params;
   try {
-    const dump = tryRunAdb(`shell dumpsys package ${pkg}`, serial);
+    const [dump, pathOut] = await Promise.all([
+      tryRunAdb(`shell dumpsys package ${pkg}`, serial),
+      tryRunAdb(`shell pm path ${pkg}`, serial),
+    ]);
 
     const extract = (pattern) => { const m = dump.match(pattern); return m ? m[1].trim() : 'N/A'; };
     const versionName = extract(/versionName=([^\s\n]+)/);
@@ -261,91 +317,96 @@ app.get('/api/devices/:serial/apps/:package/info', (req, res) => {
     const lastUpdate = extract(/lastUpdateTime=([^\n]+)/);
     const installer = extract(/installerPackageName=([^\s\n]+)/);
 
-    // Try to get human-readable label via aapt/aapt2 (fallback to pkg name)
-    // Note: aapt is not always available, so we try pm dump instead
     let appName = 'N/A';
     const labelMatch = dump.match(/label="([^"]+)"/);
     if (labelMatch) appName = labelMatch[1];
 
-    // APK path(s)
-    const pathOut = tryRunAdb(`shell pm path ${pkg}`, serial);
     const paths = pathOut.split('\n').map(l => l.replace('package:', '').trim()).filter(Boolean);
-
     const isSplit = paths.length > 1;
     const format = paths.length === 0 ? 'N/A' : isSplit ? 'Split APK' : 'APK';
 
-    // Size: sum of individual APK sizes from the device
+    // Get sizes in parallel
     let totalSizeBytes = 0;
-    for (const p of paths) {
-      try {
-        const szOut = runAdb(`shell stat -c "%s" "${p}"`, serial, 5000).trim();
-        const sz = parseInt(szOut, 10);
-        if (!isNaN(sz)) totalSizeBytes += sz;
-      } catch { }
+    if (paths.length > 0) {
+      const sizes = await Promise.all(paths.map(async (p) => {
+        try {
+          const szOut = await runAdb(`shell stat -c "%s" "${p}"`, serial, 5000);
+          const sz = parseInt(szOut.trim(), 10);
+          return isNaN(sz) ? 0 : sz;
+        } catch { return 0; }
+      }));
+      totalSizeBytes = sizes.reduce((a, b) => a + b, 0);
     }
-    const sizeMB = totalSizeBytes > 0 ? (totalSizeBytes / 1048576).toFixed(1) + ' MB' : 'N/A';
-    const sizeBytes = totalSizeBytes;
 
-    res.json({ pkg, appName, versionName, versionCode, firstInstall, lastUpdate, installer, apkPaths: paths, isSplit, format, sizeMB, sizeBytes });
+    const sizeMB = totalSizeBytes > 0 ? (totalSizeBytes / 1048576).toFixed(1) + ' MB' : 'N/A';
+
+    res.json({ pkg, appName, versionName, versionCode, firstInstall, lastUpdate, installer, apkPaths: paths, isSplit, format, sizeMB, sizeBytes: totalSizeBytes });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// Batch lightweight info for app list (format + size per package)
-app.post('/api/devices/:serial/apps/batch-info', (req, res) => {
+// Batch lightweight info for app list — packages processed in parallel within each chunk
+app.post('/api/devices/:serial/apps/batch-info', async (req, res) => {
   const { serial } = req.params;
-  const { packages } = req.body; // array of pkg strings
+  const { packages } = req.body;
   if (!Array.isArray(packages)) return res.status(400).json({ error: 'packages must be array' });
 
-  const results = {};
-  for (const pkg of packages) {
+  // Process all packages in parallel (they are independent ADB calls)
+  const entries = await Promise.all(packages.map(async (pkg) => {
     try {
-      const pathOut = tryRunAdb(`shell pm path ${pkg}`, serial);
+      const [pathOut, dump] = await Promise.all([
+        tryRunAdb(`shell pm path ${pkg}`, serial),
+        tryRunAdb(`shell dumpsys package ${pkg}`, serial),
+      ]);
+
       const paths = pathOut.split('\n').map(l => l.replace('package:', '').trim()).filter(Boolean);
       const isSplit = paths.length > 1;
       const format = paths.length === 0 ? 'N/A' : isSplit ? 'Split APK' : 'APK';
 
+      // Get all sizes in parallel
       let totalSize = 0;
-      for (const p of paths) {
-        try {
-          const sz = parseInt(runAdb(`shell stat -c "%s" "${p}"`, serial, 5000).trim(), 10);
-          if (!isNaN(sz)) totalSize += sz;
-        } catch { }
+      if (paths.length > 0) {
+        const sizes = await Promise.all(paths.map(async (p) => {
+          try {
+            const sz = parseInt((await runAdb(`shell stat -c "%s" "${p}"`, serial, 5000)).trim(), 10);
+            return isNaN(sz) ? 0 : sz;
+          } catch { return 0; }
+        }));
+        totalSize = sizes.reduce((a, b) => a + b, 0);
       }
       const sizeMB = totalSize > 0 ? (totalSize / 1048576).toFixed(1) + ' MB' : 'N/A';
 
-      // App name: try nonLocalizedLabel from dumpsys
+      // App name
       let appName = null;
-      try {
-        const dump = tryRunAdb(`shell dumpsys package ${pkg}`, serial);
-        const m = dump.match(/nonLocalizedLabel=([^\s\n\r]+)/);
-        if (m && m[1] && m[1] !== 'null') appName = m[1].replace(/"/g, '');
-        if (!appName) { const lm = dump.match(/label="([^"]+)"/); if (lm) appName = lm[1]; }
-      } catch { }
+      const m = dump.match(/nonLocalizedLabel=([^\s\n\r]+)/);
+      if (m && m[1] && m[1] !== 'null') appName = m[1].replace(/"/g, '');
+      if (!appName) { const lm = dump.match(/label="([^"]+)"/); if (lm) appName = lm[1]; }
       if (!appName) {
         const seg = pkg.split('.').pop() || pkg;
         appName = seg.charAt(0).toUpperCase() + seg.slice(1).replace(/([A-Z])/g, ' $1').trim();
       }
 
-      results[pkg] = { format, isSplit, sizeMB, appName };
+      return [pkg, { format, isSplit, sizeMB, appName }];
     } catch {
       const seg = pkg.split('.').pop() || pkg;
-      results[pkg] = {
+      return [pkg, {
         format: 'N/A', isSplit: false, sizeMB: 'N/A',
-        appName: seg.charAt(0).toUpperCase() + seg.slice(1)
-      };
+        appName: seg.charAt(0).toUpperCase() + seg.slice(1),
+      }];
     }
-  }
+  }));
+
+  const results = Object.fromEntries(entries);
   res.json({ results });
 });
 
 // ─── API: Extract APK ─────────────────────────────────────────────────────────
 
-app.post('/api/devices/:serial/apps/:package/extract', (req, res) => {
+app.post('/api/devices/:serial/apps/:package/extract', async (req, res) => {
   const { serial, package: pkg } = req.params;
   try {
-    const pathOut = tryRunAdb(`shell pm path ${pkg}`, serial);
+    const pathOut = await tryRunAdb(`shell pm path ${pkg}`, serial);
     const paths = pathOut.split('\n').map(l => l.replace('package:', '').trim()).filter(Boolean);
 
     if (paths.length === 0) return res.status(400).json({ error: 'No se pudo obtener la ruta del APK.' });
@@ -362,7 +423,7 @@ app.post('/api/devices/:serial/apps/:package/extract', (req, res) => {
     if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
     const outFile = path.join(outDir, `${pkg}.apk`);
 
-    runAdb(`pull "${devicePath}" "${outFile}"`, serial, 60000);
+    await runAdb(`pull "${devicePath}" "${outFile}"`, serial, 60000);
 
     if (!fs.existsSync(outFile)) {
       return res.status(500).json({ error: 'La extracción falló. El APK podría estar protegido.' });
@@ -383,7 +444,7 @@ app.post('/api/devices/:serial/apps/:package/extract', (req, res) => {
 
 // ─── API: Compile XAPK ────────────────────────────────────────────────────────
 
-app.get('/api/devices/:serial/apps/:package/compile-xapk', (req, res) => {
+app.get('/api/devices/:serial/apps/:package/compile-xapk', async (req, res) => {
   const { serial, package: pkg } = req.params;
 
   res.setHeader('Content-Type', 'text/event-stream');
@@ -400,7 +461,7 @@ app.get('/api/devices/:serial/apps/:package/compile-xapk', (req, res) => {
 
   let paths;
   try {
-    const pathOut = runAdb(`shell pm path ${pkg}`, serial);
+    const pathOut = await runAdb(`shell pm path ${pkg}`, serial);
     paths = pathOut.split('\n').map(l => l.replace('package:', '').trim()).filter(Boolean);
   } catch (e) { done(false, null, 'No se pudo obtener la ruta: ' + e.message); return; }
 
@@ -409,23 +470,30 @@ app.get('/api/devices/:serial/apps/:package/compile-xapk', (req, res) => {
     return;
   }
 
-  send(`Encontrados ${paths.length} archivos APK. Extrayendo...`, 10);
+  send(`Encontrados ${paths.length} archivos APK. Extrayendo en paralelo...`, 10);
 
-  // Create temp working dir
   const tmpDir = path.join(os.tmpdir(), `xapk_${pkg}_${Date.now()}`);
   fs.mkdirSync(tmpDir, { recursive: true });
 
-  // Pull each APK
-  let pulled = 0;
-  for (const p of paths) {
+  // Pull all APKs in parallel
+  const pullResults = await Promise.all(paths.map(async (p, idx) => {
     const fname = path.basename(p).replace(/\r/g, '');
-    const localPath = path.join(tmpDir, fname || `split_${pulled}.apk`);
+    const localPath = path.join(tmpDir, fname || `split_${idx}.apk`);
     try {
-      runAdb(`pull "${p.trim()}" "${localPath}"`, serial, 120000);
-      pulled++;
-      send(`Extraído ${pulled}/${paths.length}: ${fname}`, 10 + Math.floor((pulled / paths.length) * 50));
+      await runAdb(`pull "${p.trim()}" "${localPath}"`, serial, 120000);
+      return { fname, ok: true };
     } catch (e) {
-      send(`⚠ Error extrayendo ${fname}: ${e.message}`);
+      return { fname, ok: false, error: e.message };
+    }
+  }));
+
+  let pulled = 0;
+  for (const r of pullResults) {
+    if (r.ok) {
+      pulled++;
+      send(`Extraído ${pulled}/${paths.length}: ${r.fname}`, 10 + Math.floor((pulled / paths.length) * 50));
+    } else {
+      send(`⚠ Error extrayendo ${r.fname}: ${r.error}`);
     }
   }
 
@@ -433,8 +501,7 @@ app.get('/api/devices/:serial/apps/:package/compile-xapk', (req, res) => {
 
   send('Obteniendo información del paquete...', 65);
 
-  // Get package info for manifest
-  const dump = tryRunAdb(`shell dumpsys package ${pkg}`, serial);
+  const dump = await tryRunAdb(`shell dumpsys package ${pkg}`, serial);
   const extr = (re) => { const m = dump.match(re); return m ? m[1].trim() : '1'; };
   const versionName = extr(/versionName=([^\s\n]+)/) || '1.0';
   const versionCode = extr(/versionCode=(\d+)/) || '1';
@@ -442,7 +509,6 @@ app.get('/api/devices/:serial/apps/:package/compile-xapk', (req, res) => {
 
   send('Creando manifest.json...', 70);
 
-  // Build split_apks list from pulled files
   const pulledFiles = fs.readdirSync(tmpDir).filter(f => f.endsWith('.apk'));
   const splitApks = pulledFiles.map(f => ({ file: f, id: f.replace('.apk', '') }));
 
@@ -467,24 +533,18 @@ app.get('/api/devices/:serial/apps/:package/compile-xapk', (req, res) => {
   const zipCmd = `powershell -Command "Compress-Archive -Path '${tmpDir}\\*' -DestinationPath '${zipPath}' -Force"`;
   exec(zipCmd, (err) => {
     if (err || !fs.existsSync(zipPath)) {
-      // Cleanup
       try { fs.rmSync(tmpDir, { recursive: true }); } catch { }
       done(false, null, 'Error al comprimir el XAPK: ' + (err?.message || 'desconocido'));
       return;
     }
 
-    // Rename .zip -> .xapk
     try { if (fs.existsSync(xapkPath)) fs.unlinkSync(xapkPath); } catch { }
     fs.renameSync(zipPath, xapkPath);
-
-    // Cleanup temp dir
     try { fs.rmSync(tmpDir, { recursive: true }); } catch { }
 
     send('XAPK listo. Descargando...', 95);
 
-    // Stream the XAPK to client
     const stat = fs.statSync(xapkPath);
-    // Signal client to expect file
     res.write(`data: ${JSON.stringify({ done: true, ok: true, fileReady: true, size: stat.size })}\n\n`);
     res.end();
   });
@@ -523,11 +583,11 @@ app.get('/api/network/ip', (req, res) => {
 
 // ─── API: ADB Wireless Pairing ───────────────────────────────────────────────
 
-app.post('/api/adb/pair', (req, res) => {
+app.post('/api/adb/pair', async (req, res) => {
   const { ip, port, code } = req.body;
   if (!ip || !port || !code) return res.status(400).json({ error: 'Faltan campos requeridos' });
   try {
-    const result = runAdb(`pair ${ip}:${port} ${code}`, null, 30000);
+    const result = await runAdb(`pair ${ip}:${port} ${code}`, null, 30000);
     const success = result.toLowerCase().includes('success');
     res.json({ ok: success, output: result.trim() });
   } catch (e) {
@@ -535,14 +595,13 @@ app.post('/api/adb/pair', (req, res) => {
   }
 });
 
-app.post('/api/adb/connect', (req, res) => {
+app.post('/api/adb/connect', async (req, res) => {
   const { ip, port, label } = req.body;
   if (!ip || !port) return res.status(400).json({ error: 'Faltan campos requeridos' });
   try {
-    const result = runAdb(`connect ${ip}:${port}`, null, 15000);
+    const result = await runAdb(`connect ${ip}:${port}`, null, 15000);
     const success = result.toLowerCase().includes('connected');
     if (success) {
-      // Auto-save device on successful connection
       const devices = loadSavedDevices();
       const existing = devices.find(d => d.ip === ip);
       if (existing) {
@@ -550,13 +609,15 @@ app.post('/api/adb/connect', (req, res) => {
         existing.lastConnected = new Date().toISOString();
         if (label) existing.label = label;
       } else {
-        // Try to get device brand/model for label
         let autoLabel = label || `${ip}:${port}`;
         try {
           const serial = `${ip}:${port}`;
-          const brand = runAdb('shell getprop ro.product.manufacturer', serial, 5000).trim();
-          const model = runAdb('shell getprop ro.product.model', serial, 5000).trim();
-          if (brand && model && brand !== 'N/A') autoLabel = `${brand} ${model}`;
+          const props = await runAdb(
+            `shell "getprop ro.product.manufacturer && getprop ro.product.model"`,
+            serial, 5000
+          );
+          const ls = props.trim().split('\n').map(l => l.trim());
+          if (ls[0] && ls[1] && ls[0] !== 'N/A') autoLabel = `${ls[0]} ${ls[1]}`;
         } catch { }
         devices.push({
           id: Date.now().toString(),
@@ -644,14 +705,12 @@ function broadcastLog(msg, type = 'info') {
   logHistory.push(logEntry);
   if (logHistory.length > maxLogHistory) logHistory.shift();
 
-  // Send to all connected clients
   const sseData = `data: ${JSON.stringify(logEntry)}\n\n`;
   for (const client of logClients) {
     client.write(sseData);
   }
 }
 
-// Intercept console.log and console.error
 const origLog = console.log;
 const origErr = console.error;
 console.log = (...args) => {
@@ -670,7 +729,6 @@ app.get('/api/logs/stream', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
-  // Send history immediately
   for (const entry of logHistory) {
     res.write(`data: ${JSON.stringify(entry)}\n\n`);
   }
@@ -720,11 +778,9 @@ app.listen(PORT, '127.0.0.1', () => {
 
     systray.onClick(action => {
       if (action.seq_id === 0) {
-        // Abrir Interfaz Web
         const startCmd = os.platform() === 'win32' ? 'start' : 'xdg-open';
         exec(`${startCmd} http://localhost:${PORT}`);
       } else if (action.seq_id === 1) {
-        // Apagar Servidor
         console.log('🛑 Servidor cerrado desde el Tray Icon');
         systray.kill(false);
         setTimeout(() => process.exit(0), 500);

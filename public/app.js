@@ -9,6 +9,8 @@ let state = {
     currentPkg: null,
     currentPkgInfo: null,
     batchInfoLoading: false,
+    appsCache: {},      // { 'user': [...], 'system': [...], 'all': [...] }
+    deviceLabelCache: {}, // serial -> { label, wireless, customName }
 };
 
 /* ─── Init ───────────────────────────────────────────────────── */
@@ -38,7 +40,12 @@ function showSetupOptions() {
 }
 
 function showMainApp() {
-    document.getElementById('adb-path-label').textContent = state.adbPath;
+    const label = document.getElementById('adb-path-label');
+    // Show only the filename, full path in tooltip
+    const adb = state.adbPath || '';
+    const short = adb.split(/[\\/]/).pop() || adb;
+    label.textContent = short;
+    label.title = adb;
     document.getElementById('screen-setup').classList.add('hidden');
     document.getElementById('screen-main').classList.remove('hidden');
     loadDevices();
@@ -48,13 +55,33 @@ function showMainApp() {
 
 let knownSerials = [];
 let pollTimer = null;
+let _lastActivity = Date.now();
+let _pollInterval = 4000;
+
+function registerActivity() {
+    _lastActivity = Date.now();
+    // Increase polling frequency on activity
+    if (_pollInterval !== 2000) {
+        _pollInterval = 2000;
+        startDevicePolling();
+    }
+}
 
 function startDevicePolling() {
     if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(pollDevices, 4000);
+    pollTimer = setInterval(pollDevices, _pollInterval);
 }
 
 async function pollDevices() {
+    // Slow down polling after 30s of inactivity
+    const idle = Date.now() - _lastActivity;
+    const desired = idle > 30000 ? 8000 : idle > 10000 ? 4000 : 2000;
+    if (desired !== _pollInterval) {
+        _pollInterval = desired;
+        startDevicePolling();
+        return;
+    }
+
     try {
         const res = await fetch('/api/devices/poll');
         const data = await res.json();
@@ -67,6 +94,7 @@ async function pollDevices() {
             // If active device was disconnected, clear the panel
             if (state.currentSerial && !knownSerials.includes(state.currentSerial)) {
                 state.currentSerial = null;
+                state.appsCache = {};
                 hide('panel-device');
                 show('panel-welcome');
                 toast('Dispositivo desconectado', 'warning');
@@ -141,6 +169,7 @@ function downloadAdb() {
 
 /* ─── Devices ────────────────────────────────────────────────── */
 async function loadDevices() {
+    registerActivity();
     const sidebar = document.getElementById('device-list-sidebar');
     sidebar.innerHTML = `<div class="nav-btn" style="justify-content:center"><div class="spinner"></div></div>`;
     try {
@@ -148,6 +177,8 @@ async function loadDevices() {
         const data = await res.json();
         if (!res.ok) return toast(data.error, 'error');
         knownSerials = data.devices.map(d => d.serial);
+        // Cache device label/meta for instant display
+        for (const d of data.devices) { state.deviceLabelCache[d.serial] = d; }
         if (data.devices.length === 0) {
             sidebar.innerHTML = `<div style="padding:0.5rem 0.75rem;color:var(--text3);font-size:0.8rem">Sin dispositivos</div>`;
             return;
@@ -167,21 +198,41 @@ async function loadDevices() {
           <div style="display:flex;align-items:center;gap:4px"><div class="device-serial">${displayName}</div>${wifiIcon}</div>
           ${sub}
         </div>
-        <button class="btn-rename-device" onclick="event.stopPropagation();renameDevice('${escapedSerial}','${displayName.replace(/'/g, "\\'")}')" title="Renombrar">
+        <button class="btn-rename-device" onclick="event.stopPropagation();openRenameModal('${escapedSerial}','${displayName.replace(/'/g, "\\'").replace(/"/g, '&quot;')}')" title="Renombrar">
           <svg viewBox="0 0 20 20" fill="currentColor" width="11" height="11"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>
         </button>
       </div>`;
         }).join('');
-        // Also refresh saved devices badge
         loadSavedDevicesBadge();
     } catch {
         sidebar.innerHTML = `<div style="padding:0.5rem 0.75rem;color:var(--red);font-size:0.8rem">Error al conectar</div>`;
     }
 }
 
-async function renameDevice(serial, currentName) {
-    const name = prompt('Nombre para este dispositivo:', currentName || '');
-    if (name === null) return; // cancelled
+/* ─── Rename Device Modal ────────────────────────────────────── */
+let _renameSerial = null;
+
+function openRenameModal(serial, currentName) {
+    _renameSerial = serial;
+    document.getElementById('rename-device-serial').textContent = serial;
+    const input = document.getElementById('rename-device-input');
+    input.value = currentName || '';
+    show('modal-rename-overlay');
+    setTimeout(() => input.focus(), 80);
+}
+
+function closeRenameModal(e) {
+    if (e && e.target !== document.getElementById('modal-rename-overlay')) return;
+    hide('modal-rename-overlay');
+    _renameSerial = null;
+}
+
+async function confirmRenameDevice() {
+    if (!_renameSerial) return;
+    const name = document.getElementById('rename-device-input').value;
+    const serial = _renameSerial;
+    hide('modal-rename-overlay');
+    _renameSerial = null;
     try {
         if (name.trim() === '') {
             await fetch(`/api/device-names/${encodeURIComponent(serial)}`, { method: 'DELETE' });
@@ -199,9 +250,15 @@ async function renameDevice(serial, currentName) {
 }
 
 async function selectDevice(serial) {
+    registerActivity();
     document.querySelectorAll('.device-item').forEach(el => el.classList.remove('selected'));
     const el = document.getElementById('dev-' + encodeURIComponent(serial));
     if (el) el.classList.add('selected');
+
+    // If switching device, clear app cache
+    if (state.currentSerial !== serial) {
+        state.appsCache = {};
+    }
 
     state.currentSerial = serial;
     state.currentFilter = 'user';
@@ -210,22 +267,33 @@ async function selectDevice(serial) {
     updateFilterBtns();
     hide('panel-welcome'); show('panel-device');
 
-    document.getElementById('device-name').textContent = serial;
-    document.getElementById('device-meta').textContent = 'Cargando información...';
-    document.getElementById('badge-android').textContent = 'Android –';
-    document.getElementById('badge-serial').textContent = serial;
+    // Use cached label data from loadDevices() for instant display
+    const cached = state.deviceLabelCache[serial];
+    if (cached) {
+        const label = cached.customName || (cached.label !== serial ? cached.label : serial);
+        document.getElementById('device-name').textContent = label;
+        document.getElementById('device-meta').textContent = `Serial: ${serial}`;
+        document.getElementById('badge-android').textContent = 'Android –';
+        document.getElementById('badge-serial').textContent = serial;
+    } else {
+        document.getElementById('device-name').textContent = serial;
+        document.getElementById('device-meta').textContent = 'Cargando información...';
+        document.getElementById('badge-android').textContent = 'Android –';
+        document.getElementById('badge-serial').textContent = serial;
+    }
 
-    try {
-        const res = await fetch(`/api/devices/${encodeURIComponent(serial)}/info`);
-        const d = await res.json();
-        if (!res.ok) throw new Error(d.error);
-        state.currentDeviceInfo = d;
-        document.getElementById('device-name').textContent = `${d.brand} ${d.model}`;
-        document.getElementById('device-meta').textContent = `Serial: ${d.serial} · ${d.device}`;
-        document.getElementById('badge-android').textContent = `Android ${d.android}`;
-        document.getElementById('badge-serial').textContent = `API ${d.sdk}`;
-        if (el) el.querySelector('.device-serial').textContent = `${d.brand} ${d.model}`;
-    } catch { toast('No se pudo obtener info del dispositivo', 'error'); }
+    // Fetch full device info in background (enriches display with android/sdk/device)
+    fetch(`/api/devices/${encodeURIComponent(serial)}/info`)
+        .then(res => res.ok ? res.json() : Promise.reject())
+        .then(d => {
+            state.currentDeviceInfo = d;
+            document.getElementById('device-name').textContent = `${d.brand} ${d.model}`;
+            document.getElementById('device-meta').textContent = `Serial: ${d.serial} · ${d.device}`;
+            document.getElementById('badge-android').textContent = `Android ${d.android}`;
+            document.getElementById('badge-serial').textContent = `API ${d.sdk}`;
+            if (el) el.querySelector('.device-serial').textContent = `${d.brand} ${d.model}`;
+        })
+        .catch(() => { });
 
     loadApps();
 }
@@ -233,7 +301,18 @@ async function selectDevice(serial) {
 /* ─── Apps ───────────────────────────────────────────────────── */
 async function loadApps() {
     if (!state.currentSerial) return;
+    registerActivity();
     const container = document.getElementById('app-list-container');
+
+    // Use cache if available for this filter type
+    const cacheKey = state.currentFilter;
+    if (state.appsCache[cacheKey]) {
+        state.apps = state.appsCache[cacheKey];
+        state.filteredApps = [...state.apps];
+        renderApps();
+        return;
+    }
+
     container.innerHTML = `<div class="empty-state sm"><div class="spinner"></div><p>Cargando aplicaciones...</p></div>`;
 
     try {
@@ -244,29 +323,30 @@ async function loadApps() {
         // Build initial app list with package name only
         state.apps = data.packages.map(pkg => ({
             pkg,
-            name: null,       // loaded lazily
-            format: '…',      // loaded in batches
+            name: null,
+            format: '…',
             sizeMB: '…',
             isSplit: null,
         }));
         state.filteredApps = [...state.apps];
         renderApps();
 
-        // Start batch info loading in chunks of 20
-        loadBatchInfo(data.packages);
+        // Batch info loads ALL packages in parallel on the server — chunks are just for incremental UI updates
+        loadBatchInfo(data.packages, cacheKey);
     } catch (e) {
         container.innerHTML = `<div class="empty-state sm"><p style="color:var(--red)">Error: ${e.message}</p></div>`;
     }
 }
 
-async function loadBatchInfo(packages) {
+async function loadBatchInfo(packages, cacheKey) {
     state.batchInfoLoading = true;
-    const CHUNK = 20;
+    // Server now processes all packages in parallel — chunks are for streaming UI progress
+    const CHUNK = 30;
     const total = packages.length;
 
-    // ── Show popup ──────────────────────────────────────────────
     const popup = document.getElementById('batch-popup');
     const popupTitle = document.getElementById('batch-popup-title');
+    const popupProgress = document.getElementById('batch-popup-progress');
     const spinner = document.getElementById('batch-popup-spinner');
     const check = document.getElementById('batch-popup-check');
 
@@ -274,10 +354,15 @@ async function loadBatchInfo(packages) {
     spinner.classList.remove('hidden');
     check.classList.add('hidden');
     popupTitle.textContent = 'Cargando datos…';
+    popupProgress.textContent = `0 / ${total}`;
 
     let loaded = 0;
+    const serialAtStart = state.currentSerial;
 
     for (let i = 0; i < packages.length; i += CHUNK) {
+        // Abort if user switched device
+        if (state.currentSerial !== serialAtStart) break;
+
         const chunk = packages.slice(i, i + CHUNK);
         try {
             const res = await fetch(`/api/devices/${encodeURIComponent(state.currentSerial)}/apps/batch-info`, {
@@ -287,7 +372,6 @@ async function loadBatchInfo(packages) {
             });
             if (!res.ok) break;
             const { results } = await res.json();
-            // Merge into state
             for (const app of state.apps) {
                 if (results[app.pkg]) {
                     app.format = results[app.pkg].format;
@@ -296,29 +380,31 @@ async function loadBatchInfo(packages) {
                     app.name = results[app.pkg].appName || null;
                 }
             }
-            // Re-filter and render
             const q = document.getElementById('app-search').value.toLowerCase();
             state.filteredApps = q
                 ? state.apps.filter(a => a.pkg.toLowerCase().includes(q) || (a.name && a.name.toLowerCase().includes(q)))
                 : [...state.apps];
             renderApps();
 
-            // ── Update popup progress ────────────────────────────
             loaded = Math.min(i + CHUNK, total);
+            popupProgress.textContent = `${loaded} / ${total}`;
 
-            // Allow browser to repaint so progress is visible
-            await new Promise(r => setTimeout(r, 10));
+            await new Promise(r => setTimeout(r, 0));
         } catch { break; }
     }
 
-    // ── Done state ───────────────────────────────────────────────
+    // Cache completed list
+    if (state.currentSerial === serialAtStart && cacheKey) {
+        state.appsCache[cacheKey] = [...state.apps];
+    }
+
     state.batchInfoLoading = false;
     popupTitle.textContent = '¡Datos cargados!';
+    popupProgress.textContent = `${total} / ${total}`;
     spinner.classList.add('hidden');
     check.classList.remove('hidden');
     popup.classList.add('done');
 
-    // Auto-hide after 3 s
     setTimeout(() => {
         popup.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
         popup.style.opacity = '0';
@@ -329,13 +415,16 @@ async function loadBatchInfo(packages) {
             popup.style.transform = '';
             popup.style.transition = '';
         }, 400);
-    }, 3000);
+    }, 2500);
 }
 
 function switchFilter(type) {
+    if (state.currentFilter === type && state.appsCache[type]) return; // already loaded
     state.currentFilter = type;
     updateFilterBtns();
     document.getElementById('app-search').value = '';
+    state.apps = [];
+    state.filteredApps = [];
     loadApps();
 }
 
@@ -985,8 +1074,11 @@ function toast(msg, type = 'info', duration = 4000) {
 }
 
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { closeModal(); closeWirelessModal(); closeConsoleModal(); }
+    if (e.key === 'Escape') { closeModal(); closeWirelessModal(); closeConsoleModal(); closeRenameModal(); }
     if (e.key === 'r' && e.ctrlKey) { e.preventDefault(); loadDevices(); }
+    if (e.key === 'Enter' && document.getElementById('modal-rename-overlay') && !document.getElementById('modal-rename-overlay').classList.contains('hidden')) {
+        confirmRenameDevice();
+    }
 });
 
 /* ─── Server Console Logs ────────────────────────────────────── */

@@ -1319,6 +1319,18 @@ html[data-theme="light"] .batch-popup.done {
   color: var(--green);
 }
 
+.batch-popup-progress {
+  font-size: 0.72rem;
+  color: var(--text3);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.batch-popup.done .batch-popup-progress {
+  color: var(--green);
+  opacity: 0.75;
+}
+
 /* ── Console Button ─────────────────────────────────────── */
 .btn-icon {
   background: var(--surface);

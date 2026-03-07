@@ -12,8 +12,8 @@ Herramienta local para extraer archivos APK y XAPK de dispositivos Android conec
 - **Soporte mDNS** — detecta dispositivos auto-conectados por depuración inalámbrica (formato `adb-*._adb-tls-connect._tcp`), resuelve su IP y muestra marca/modelo.
 - **Depuración inalámbrica** (WiFi) — emparejar y conectar dispositivos sin cable USB utilizando los códigos de Android 11+. Interfaz guiada, simple y directa tanto web como consola.
 - **Dispositivos guardados** — los dispositivos WiFi se guardan automáticamente para reconexión rápida. Si los puertos caducan, un asistente ayuda a revincular con la IP pre-cargada.
-- **Nombres personalizados** — se puede asignar un nombre propio a cualquier dispositivo (por serial) que persiste entre sesiones, facilitando la identificación.
-
+- **Nombres personalizados** — se puede asignar un nombre propio a cualquier dispositivo usando un modal guiado que facilita la identificación. El nombre se guarda al instante.
+- **Cambio Instantáneo de Dispositivos** — al clickear otro teléfono, la interfaz cambia de inmediato mostrando datos oxidados de caché, mientras que las versiones en profundidad cargan por detrás sin ralentizar.
 ### Extracción de Aplicaciones
 - **Nombres Reales (Web y CLI)** — ahora se muestra el verdadero nombre de la aplicación (ej. *WhatsApp*) además del nombre del paquete (ej. `com.whatsapp`).
 - **Información completa** con formato (APK / Split APK) y tamaño exacto.
@@ -25,7 +25,10 @@ Herramienta local para extraer archivos APK y XAPK de dispositivos Android conec
 
 ### Interfaz Web Optimizada
 - **Diseño Responsivo (Mobile First)** — la interfaz se adapta inteligentemente a pantallas de teléfonos, pasando la barra lateral al inferior y los modales a pantalla completa.
-- **Carga Asíncrona (Batch)** — la información pesada (formatos y tamaños) carga en segundo plano con un popup discreto, sin bloquear el uso normal de la lista.
+- **Rendimiento Ultrarrápido (100% Asíncrono)** — todo el servidor opera sin bloquear el hilo principal usando paralelización pura (`Promise.all`) para resolver cientos de aplicaciones en segundos.
+- **Caché Inteligente** — las rutas clave, configuraciones y listas de aplicaciones se guardan en memoria. Cambiar de dispositivo o de filtro (Usuario/Sistema) muestra los datos instantáneamente sin recargas.
+- **Carga Asíncrona (BatchInfo Paralelo)** — la información pesada (formatos y tamaños) carga todo de una vez en segundo plano con un discreto popup que muestra el progreso numérico exacto (`X / Y apps`), permitiéndote usar la app al instante.
+- **Polling Adaptativo** — el servidor detecta si estás utilizando la máquina y ajusta los recursos: responde al instante (2s) si hay uso o ralentiza silenciosamente para ahorrar energía (hasta 8s) si la pestaña está inactiva.
 - **Soporte Completo de Temas** — diseño pulido en modo claro y oscuro, con colores vibrantes y desenfoques tipo glassmorphism.
 - **Servidor Discreto** — ahora el launcher web arranca el servidor en segundo plano completamente invisible.
 - **Bandeja de Sistema (SysTray)** — un ícono nativo de Windows (abajo a la derecha) permite reabrir la interfaz web si la cierras o apagar el servidor fácilmente.
